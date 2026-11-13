@@ -1,0 +1,6 @@
+{
+  "name": "Shayari Lok",
+  "description": "Ultra-lightweight Hindi & Hinglish Shayari and quotes reader with remote GitHub JSON config, offline cache, favorites, and instant sharing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
