@@ -133,7 +133,7 @@ data class ShayariConfig(
   companion object {
     const val DEFAULT_MAINTENANCE_MESSAGE =
       "Shayari Lok is currently undergoing scheduled updates. Please check back shortly."
-    val DEFAULT_CATEGORIES = listOf("All", "Love", "Attitude", "Motivation", "Sad")
+    val DEFAULT_CATEGORIES = listOf("Popular", "Love", "Sad", "Motivational", "Attitude")
 
     fun fromJson(rawJson: String): ShayariConfig {
       val root = JSONObject(rawJson)
@@ -184,8 +184,8 @@ data class ShayariConfig(
       }
       if (categories.isEmpty()) {
         categories.addAll(DEFAULT_CATEGORIES)
-      } else if (categories.none { it.equals("All", ignoreCase = true) }) {
-        categories.add(0, "All")
+      } else if (categories.none { it.equals("Popular", ignoreCase = true) || it.equals("All", ignoreCase = true) }) {
+        categories.add(0, "Popular")
       }
 
       val shayariItems = mutableListOf<ShayariItem>()

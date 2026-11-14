@@ -93,13 +93,12 @@ private fun NotificationsContent(
     repository.markNotificationsRead(config)
   }
 
-  val isDark = isSystemInDarkTheme()
   val bgGradient =
     Brush.verticalGradient(
       colors =
         listOf(
           MaterialTheme.colorScheme.background,
-          if (isDark) DarkBackgroundBottom else LightBackgroundBottom,
+          LightBackgroundBottom,
         )
     )
 

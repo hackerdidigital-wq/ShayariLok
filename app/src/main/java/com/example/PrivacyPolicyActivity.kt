@@ -69,13 +69,12 @@ private data class PolicySection(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PrivacyPolicyScreen(onBack: () -> Unit) {
-  val isDark = isSystemInDarkTheme()
   val bgGradient =
     Brush.verticalGradient(
       colors =
         listOf(
           MaterialTheme.colorScheme.background,
-          if (isDark) DarkBackgroundBottom else LightBackgroundBottom,
+          LightBackgroundBottom,
         )
     )
 

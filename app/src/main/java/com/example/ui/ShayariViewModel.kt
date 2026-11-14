@@ -33,6 +33,7 @@ sealed interface ShayariScreenState {
     val selectedCategory: String,
     val activeTab: MainTab,
     val favoriteIds: Set<Int>,
+    val searchQuery: String,
   ) : ShayariScreenState {
     val visibleShayaris: List<ShayariItem>
       get() {
@@ -42,10 +43,24 @@ sealed interface ShayariScreenState {
           } else {
             config.shayariList
           }
-        return if (selectedCategory.equals("All", ignoreCase = true)) {
-          base
+        val byCategory =
+          if (
+            selectedCategory.equals("Popular", ignoreCase = true) ||
+              selectedCategory.equals("All", ignoreCase = true)
+          ) {
+            base
+          } else {
+            base.filter { it.category.equals(selectedCategory, ignoreCase = true) }
+          }
+        val query = searchQuery.trim()
+        return if (query.isEmpty()) {
+          byCategory
         } else {
-          base.filter { it.category.equals(selectedCategory, ignoreCase = true) }
+          byCategory.filter { item ->
+            item.text.contains(query, ignoreCase = true) ||
+              item.category.contains(query, ignoreCase = true) ||
+              item.author.contains(query, ignoreCase = true)
+          }
         }
       }
   }
@@ -57,9 +72,11 @@ data class ShayariUiState(
   val isUsingCachedData: Boolean = false,
   val lastSyncedAtMillis: Long = 0L,
   val textSize: ShayariTextSize = ShayariTextSize.MEDIUM,
+  val isSearchVisible: Boolean = false,
+  val searchQuery: String = "",
   val syncStatusMessage: String? = null,
   val showUpdateDialog: Boolean = false,
-  val hasUnreadAnnouncement: Boolean = false,
+  val unreadNotificationCount: Int = 0,
 )
 
 class ShayariViewModel(application: Application) : AndroidViewModel(application) {
@@ -70,10 +87,12 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   val uiState: StateFlow<ShayariUiState> = _uiState.asStateFlow()
 
   private var currentConfig: ShayariConfig = repository.loadCachedConfig()
-  private var selectedCategory: String = "All"
+  private var selectedCategory: String =
+    currentConfig.categories.firstOrNull() ?: "Popular"
   private var activeTab: MainTab = MainTab.EXPLORE
   private var favoriteIds: Set<Int> = repository.getFavoriteIds()
   private var textSize: ShayariTextSize = repository.getShayariTextSize()
+  private var searchQuery: String = ""
   private var updateDismissedThisSession: Boolean = false
 
   init {
@@ -89,10 +108,11 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     favoriteIds = repository.getFavoriteIds()
     textSize = repository.getShayariTextSize()
     if (
-      !selectedCategory.equals("All", ignoreCase = true) &&
+      !selectedCategory.equals("Popular", ignoreCase = true) &&
+        !selectedCategory.equals("All", ignoreCase = true) &&
         currentConfig.categories.none { it.equals(selectedCategory, ignoreCase = true) }
     ) {
-      selectedCategory = "All"
+      selectedCategory = currentConfig.categories.firstOrNull() ?: "Popular"
     }
     publishCurrentState(
       isUsingCached = _uiState.value.isUsingCachedData,
@@ -109,10 +129,11 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         onSuccess = { remoteConfig ->
           currentConfig = remoteConfig
           if (
-            !selectedCategory.equals("All", ignoreCase = true) &&
+            !selectedCategory.equals("Popular", ignoreCase = true) &&
+              !selectedCategory.equals("All", ignoreCase = true) &&
               remoteConfig.categories.none { it.equals(selectedCategory, ignoreCase = true) }
           ) {
-            selectedCategory = "All"
+            selectedCategory = remoteConfig.categories.firstOrNull() ?: "Popular"
           }
           publishCurrentState(
             isUsingCached = false,
@@ -146,8 +167,29 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   fun selectTab(tab: MainTab) {
     activeTab = tab
     if (tab == MainTab.FAVORITES) {
-      selectedCategory = "All"
+      selectedCategory = currentConfig.categories.firstOrNull() ?: "Popular"
     }
+    publishCurrentState(
+      isUsingCached = _uiState.value.isUsingCachedData,
+      syncMessage = null,
+    )
+  }
+
+  fun toggleSearchVisibility() {
+    val nextVisible = !_uiState.value.isSearchVisible
+    if (!nextVisible) {
+      searchQuery = ""
+    }
+    _uiState.update { it.copy(isSearchVisible = nextVisible, searchQuery = searchQuery) }
+    publishCurrentState(
+      isUsingCached = _uiState.value.isUsingCachedData,
+      syncMessage = null,
+    )
+  }
+
+  fun updateSearchQuery(query: String) {
+    searchQuery = query
+    _uiState.update { it.copy(searchQuery = query) }
     publishCurrentState(
       isUsingCached = _uiState.value.isUsingCachedData,
       syncMessage = null,
@@ -188,6 +230,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
           selectedCategory = selectedCategory,
           activeTab = activeTab,
           favoriteIds = favoriteIds,
+          searchQuery = searchQuery,
         )
       }
 
@@ -196,15 +239,23 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         currentConfig.latestVersionCode > BuildConfig.VERSION_CODE &&
         currentConfig.forceUpdateUrl.isNotBlank()
 
+    val unreadCount =
+      if (repository.hasUnreadNotifications(currentConfig)) {
+        currentConfig.notifications.size
+      } else {
+        0
+      }
+
     _uiState.update { previous ->
       previous.copy(
         screenState = screenState,
         isUsingCachedData = isUsingCached,
         lastSyncedAtMillis = repository.getLastSyncedTimeMillis(),
         textSize = textSize,
+        searchQuery = searchQuery,
         syncStatusMessage = syncMessage,
         showUpdateDialog = needsUpdate,
-        hasUnreadAnnouncement = repository.hasUnreadNotifications(currentConfig),
+        unreadNotificationCount = unreadCount,
       )
     }
   }

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/apk/res/android"
+    android:width="360dp"
+    android:height="180dp"
+    android:viewportWidth="360"
+    android:viewportHeight="180">
+    <!-- Rich warm dark espresso & golden bokeh backdrop -->
+    <path android:pathData="M0,0h360v180h-360z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="260"
+                android:endY="150"
+                android:startX="20"
+                android:startY="20"
+                android:type="linear">
+                <item android:color="#3D1C0A" android:offset="0.0" />
+                <item android:color="#240B14" android:offset="0.45" />
+                <item android:color="#12080E" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Soft golden bokeh circles -->
+    <path android:fillColor="#44FFD166" android:pathData="M42,38 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0" />
+    <path android:fillColor="#33FFB703" android:pathData="M116,32 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0" />
+    <path android:fillColor="#28FF758F" android:pathData="M138,136 m-16,0 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0" />
+    <!-- Dark emerald leaves -->
+    <path
+        android:fillColor="#1B4332"
+        android:pathData="M34,128 C12,118 8,92 28,84 C44,94 48,116 34,128 Z M118,128 C138,116 144,92 126,82 C108,92 104,114 118,128 Z M66,144 C52,162 28,166 20,148 C34,132 54,132 66,144 Z" />
+    <!-- Stylized crimson red roses cluster -->
+    <path
+        android:fillColor="#8B0E24"
+        android:pathData="M62,76 m-28,0 a28,28 0 1,0 56,0 a28,28 0 1,0 -56,0" />
+    <path
+        android:fillColor="#C9184A"
+        android:pathData="M62,74 m-20,0 a20,20 0 1,0 40,0 a20,20 0 1,0 -40,0" />
+    <path
+        android:fillColor="#FF4D6D"
+        android:pathData="M62,73 C53,66 53,56 62,56 C71,56 71,66 62,73 Z M50,76 C50,67 60,64 64,73 C58,82 50,82 50,76 Z M74,76 C74,82 66,82 60,73 C64,64 74,67 74,76 Z" />
+    <path
+        android:fillColor="#7A0B1E"
+        android:pathData="M102,94 m-22,0 a22,22 0 1,0 44,0 a22,22 0 1,0 -44,0" />
+    <path
+        android:fillColor="#BA143C"
+        android:pathData="M102,92 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0" />
+    <path
+        android:fillColor="#9B0F28"
+        android:pathData="M68,124 m-20,0 a20,20 0 1,0 40,0 a20,20 0 1,0 -40,0" />
+    <path
+        android:fillColor="#D91E48"
+        android:pathData="M68,122 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0" />
+    <!-- Smooth dark right-side fade -->
+    <path android:pathData="M115,0 H360 V180 H115 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="245"
+                android:endY="90"
+                android:startX="115"
+                android:startY="90"
+                android:type="linear">
+                <item android:color="#0012080E" android:offset="0.0" />
+                <item android:color="#E512080E" android:offset="0.65" />
+                <item android:color="#F712080E" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

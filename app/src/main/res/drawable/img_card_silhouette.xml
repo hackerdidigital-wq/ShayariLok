@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/apk/res/android"
+    android:width="360dp"
+    android:height="180dp"
+    android:viewportWidth="360"
+    android:viewportHeight="180">
+    <!-- Twilight purple-pink sky -->
+    <path android:pathData="M0,0h360v180h-360z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="290"
+                android:endY="180"
+                android:startX="30"
+                android:startY="10"
+                android:type="linear">
+                <item android:color="#522A7A" android:offset="0.0" />
+                <item android:color="#C9598E" android:offset="0.38" />
+                <item android:color="#2E1A47" android:offset="0.74" />
+                <item android:color="#0D0A1A" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Soft dusk moon/sun glow -->
+    <path android:pathData="M112,92 m-42,0 a42,42 0 1,0 84,0 a42,42 0 1,0 -84,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="112"
+                android:centerY="92"
+                android:gradientRadius="42"
+                android:type="radial">
+                <item android:color="#FFFFE3C8" android:offset="0.0" />
+                <item android:color="#55FF94C2" android:offset="0.6" />
+                <item android:color="#002E1A47" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Twilight calm water -->
+    <path android:pathData="M0,118 H360 V180 H0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="280"
+                android:endY="180"
+                android:startX="60"
+                android:startY="118"
+                android:type="linear">
+                <item android:color="#BB462B66" android:offset="0.0" />
+                <item android:color="#EE130F24" android:offset="0.65" />
+                <item android:color="#FF0D0A1A" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Shoreline rock + thoughtful seated silhouette -->
+    <path
+        android:fillColor="#0E0A18"
+        android:pathData="M0,148 C34,142 74,146 116,154 C135,158 148,169 160,180 H0 Z" />
+    <path
+        android:fillColor="#090712"
+        android:pathData="M62,92 A8.5,8.5 0 1,0 62.1,92 Z M52,104 C54,100 68,101 71,108 L80,126 L94,132 L89,146 H74 L68,132 L54,146 H45 L50,118 Z" />
+    <!-- Smooth dark right-side fade -->
+    <path android:pathData="M120,0 H360 V180 H120 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="245"
+                android:endY="90"
+                android:startX="120"
+                android:startY="90"
+                android:type="linear">
+                <item android:color="#000D0A1A" android:offset="0.0" />
+                <item android:color="#E20D0A1A" android:offset="0.65" />
+                <item android:color="#F50D0A1A" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

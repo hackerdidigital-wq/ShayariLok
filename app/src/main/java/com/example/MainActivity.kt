@@ -54,7 +54,6 @@ class MainActivity : ComponentActivity() {
         val coroutineScope = rememberCoroutineScope()
         val copiedMessage = stringResource(R.string.copied_snackbar)
 
-        // Sync preferences (font size, remote cache, read notifications) when returning from child Activities
         DisposableEffect(lifecycleOwner) {
           val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -96,11 +95,13 @@ class MainActivity : ComponentActivity() {
               readyState = screen,
               textSize = uiState.textSize,
               isRefreshing = uiState.isRefreshing,
-              isUsingCachedData = uiState.isUsingCachedData,
-              hasUnreadAnnouncement = uiState.hasUnreadAnnouncement,
+              isSearchVisible = uiState.isSearchVisible,
+              unreadNotificationCount = uiState.unreadNotificationCount,
               snackbarHostState = snackbarHostState,
               onSelectCategory = viewModel::selectCategory,
               onSelectTab = viewModel::selectTab,
+              onToggleSearch = viewModel::toggleSearchVisibility,
+              onSearchQueryChange = viewModel::updateSearchQuery,
               onRefreshClick = { viewModel.refreshConfig(isInitialAutoSync = false) },
               onNotificationsClick = {
                 context.startActivity(Intent(context, NotificationsActivity::class.java))
@@ -108,6 +109,10 @@ class MainActivity : ComponentActivity() {
               onSettingsClick = {
                 context.startActivity(Intent(context, SettingsActivity::class.java))
               },
+              onShareAppClick = {
+                shareAppWithFriends(context, screen.config.appName)
+              },
+              onOpenCommunityClick = { url -> openExternalBrowser(context, url) },
               onCopyShayari = { item ->
                 copyShayariToClipboard(context, item)
                 coroutineScope.launch {
@@ -170,8 +175,18 @@ private fun shareShayari(context: Context, appName: String, item: ShayariItem) {
       type = "text/plain"
       putExtra(Intent.EXTRA_TEXT, shareText)
     }
-  val chooser = Intent.createChooser(intent, "Share Shayari")
-  context.startActivity(chooser)
+  context.startActivity(Intent.createChooser(intent, "Share Shayari"))
+}
+
+private fun shareAppWithFriends(context: Context, appName: String) {
+  val shareText =
+    "Check out $appName — Apki Har Bhavna Ka Saathi! Read & share Hindi Shayari anytime:\nhttps://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID}"
+  val intent =
+    Intent(Intent.ACTION_SEND).apply {
+      type = "text/plain"
+      putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+  context.startActivity(Intent.createChooser(intent, "Share $appName"))
 }
 
 private fun openExternalBrowser(context: Context, rawUrl: String) {

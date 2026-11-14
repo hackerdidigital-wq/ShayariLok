@@ -1,14 +1,14 @@
 package com.example.ui.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RippleConfiguration
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
 
 private val DarkColorScheme =
   darkColorScheme(
@@ -56,22 +56,20 @@ private val LightColorScheme =
     outline = LightOutline,
   )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShayariLokTheme(
-  darkTheme: Boolean = isSystemInDarkTheme(),
-  // Keep our curated Warm Parchment / Mehfil Dusk palette by default for cohesive branding
-  dynamicColor: Boolean = false,
+  darkTheme: Boolean = false,
   content: @Composable () -> Unit,
 ) {
-  val colorScheme =
-    when {
-      dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-        val context = LocalContext.current
-        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-      }
-      darkTheme -> DarkColorScheme
-      else -> LightColorScheme
-    }
+  val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+  // Subtle neutral ripple instead of harsh blue/lavender Material tap overlay
+  val subtleRipple =
+    RippleConfiguration(
+      color = if (darkTheme) Color.White.copy(alpha = 0.08f) else Color(0xFF4A148C).copy(alpha = 0.08f)
+    )
 
-  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  CompositionLocalProvider(LocalRippleConfiguration provides subtleRipple) {
+    MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  }
 }

@@ -2,54 +2,71 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Light Theme — Warm Parchment & Mehfil Plum
-val LightPrimary = Color(0xFF6B2D5C)
+// Brand & Neon Accents from Live Shayari / Shayari Lok Aesthetic
+val DeepRoyalPurple = Color(0xFF14072B)
+val MidnightIndigo = Color(0xFF220A48)
+val HeaderPurpleStart = Color(0xFF3E0B84)
+val HeaderPurpleEnd = Color(0xFF6B18CE)
+
+val NeonPurple = Color(0xFF7B1CFA)
+val NeonVioletGlow = Color(0xFFA855F7)
+val NeonPink = Color(0xFFFF2E93)
+val CrownGold = Color(0xFFFFD447)
+val WarmAmber = Color(0xFFFFB703)
+
+// Feature Badge Colors (Matching Reference Side Badges)
+val BadgePurple = Color(0xFF6D13F2)
+val BadgePink = Color(0xFFE11D74)
+val BadgeGreen = Color(0xFF4CA90C)
+val BadgeOrange = Color(0xFFFF6B00)
+val BadgeBlue = Color(0xFF1565D8)
+
+// Dark Theme Surface Tokens
+val DarkBackground = DeepRoyalPurple
+val DarkBackgroundBottom = MidnightIndigo
+val DarkOnBackground = Color(0xFFF9F5FF)
+val DarkSurface = Color(0xFF1E0E3B)
+val DarkOnSurface = Color(0xFFF9F5FF)
+val DarkSurfaceVariant = Color(0xFF2B1654)
+val DarkOnSurfaceVariant = Color(0xFFD2C4EB)
+val DarkOutline = Color(0xFF4B2B85)
+
+val DarkPrimary = NeonVioletGlow
+val DarkOnPrimary = Color(0xFF1C043D)
+val DarkPrimaryContainer = Color(0xFF4C1D95)
+val DarkOnPrimaryContainer = Color(0xFFF3E8FF)
+
+val DarkSecondary = NeonPink
+val DarkOnSecondary = Color(0xFFFFFFFF)
+val DarkSecondaryContainer = Color(0xFF701045)
+val DarkOnSecondaryContainer = Color(0xFFFFD9EA)
+
+val DarkTertiary = CrownGold
+val DarkOnTertiary = Color(0xFF2D1E00)
+val DarkTertiaryContainer = Color(0xFF563D00)
+val DarkOnTertiaryContainer = Color(0xFFFFF0C2)
+
+// Light Theme Tokens (for optional light toggle, aligned with Royal Purple)
+val LightBackground = Color(0xFFF7F4FC)
+val LightBackgroundBottom = Color(0xFFEDE4FA)
+val LightOnBackground = Color(0xFF1A0B33)
+val LightSurface = Color(0xFFFFFFFF)
+val LightOnSurface = Color(0xFF1A0B33)
+val LightSurfaceVariant = Color(0xFFEDE4FA)
+val LightOnSurfaceVariant = Color(0xFF564478)
+val LightOutline = Color(0xFFD5C4F2)
+
+val LightPrimary = NeonPurple
 val LightOnPrimary = Color(0xFFFFFFFF)
-val LightPrimaryContainer = Color(0xFFF9E4EF)
-val LightOnPrimaryContainer = Color(0xFF3E1034)
+val LightPrimaryContainer = Color(0xFFEDE0FF)
+val LightOnPrimaryContainer = Color(0xFF34007A)
 
-val LightSecondary = Color(0xFFC06C38)
+val LightSecondary = NeonPink
 val LightOnSecondary = Color(0xFFFFFFFF)
-val LightSecondaryContainer = Color(0xFFFFE7D6)
-val LightOnSecondaryContainer = Color(0xFF471F06)
+val LightSecondaryContainer = Color(0xFFFFE0EE)
+val LightOnSecondaryContainer = Color(0xFF630030)
 
-val LightTertiary = Color(0xFF465E73)
+val LightTertiary = Color(0xFFC48B00)
 val LightOnTertiary = Color(0xFFFFFFFF)
-val LightTertiaryContainer = Color(0xFFD9E7F4)
-val LightOnTertiaryContainer = Color(0xFF142A3D)
-
-val LightBackground = Color(0xFFFBF7F2)
-val LightBackgroundBottom = Color(0xFFF2E8DD)
-val LightOnBackground = Color(0xFF201A1E)
-
-val LightSurface = Color(0xFFFFFDF9)
-val LightOnSurface = Color(0xFF201A1E)
-val LightSurfaceVariant = Color(0xFFF3EAE1)
-val LightOnSurfaceVariant = Color(0xFF60535A)
-val LightOutline = Color(0xFFE5D7CA)
-
-// Dark Theme — Mehfil Dusk & Rose Gold
-val DarkPrimary = Color(0xFFE8B4BC)
-val DarkOnPrimary = Color(0xFF491626)
-val DarkPrimaryContainer = Color(0xFF5D264C)
-val DarkOnPrimaryContainer = Color(0xFFFFDCE5)
-
-val DarkSecondary = Color(0xFFF0B86E)
-val DarkOnSecondary = Color(0xFF442802)
-val DarkSecondaryContainer = Color(0xFF5D3A10)
-val DarkOnSecondaryContainer = Color(0xFFFFE4C4)
-
-val DarkTertiary = Color(0xFFB3CAE0)
-val DarkOnTertiary = Color(0xFF1A3144)
-val DarkTertiaryContainer = Color(0xFF2D4459)
-val DarkOnTertiaryContainer = Color(0xFFD6E8F8)
-
-val DarkBackground = Color(0xFF120E1A)
-val DarkBackgroundBottom = Color(0xFF1D1528)
-val DarkOnBackground = Color(0xFFF4ECF0)
-
-val DarkSurface = Color(0xFF1E1829)
-val DarkOnSurface = Color(0xFFF4ECF0)
-val DarkSurfaceVariant = Color(0xFF2A2138)
-val DarkOnSurfaceVariant = Color(0xFFC5B9C4)
-val DarkOutline = Color(0xFF3A2E4C)
+val LightTertiaryContainer = Color(0xFFFFF0C2)
+val LightOnTertiaryContainer = Color(0xFF3A2800)

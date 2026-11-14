@@ -15,61 +15,68 @@
     {
       "id": 1,
       "title": "Nayi Mehfil Collection Live",
-      "message": "Love, Attitude, Motivation aur Sad categories mein nayi shayari jodi gayi hai. Offline padhne ke liye dil (Heart) icon se save karein.",
+      "message": "Love, Sad, Motivational aur Attitude categories mein nayi shayari jodi gayi hai. Offline padhne ke liye dil (Heart) icon se save karein.",
       "badge": "Shayari Alert",
       "time_label": "Today"
     },
     {
       "id": 2,
       "title": "Ultra-Lightweight Offline Ready",
-      "message": "Aapki last synced shayari bina internet ke bhi hamesha uplabdh rehti hai. Nayi updates ke liye Sync button dabayein.",
+      "message": "Aapki last synced shayari bina internet ke bhi hamesha uplabdh rehti hai.",
       "badge": "App Info",
       "time_label": "Pinned"
+    },
+    {
+      "id": 3,
+      "title": "Shayari ka Duniya, Hamesha Saath",
+      "message": "Apni pasandida shayari ko ek tap mein WhatsApp aur doston ke saath share karein.",
+      "badge": "Highlight",
+      "time_label": "New"
     }
   ],
   "categories": [
-    "All",
+    "Popular",
     "Love",
-    "Attitude",
-    "Motivation",
-    "Sad"
+    "Sad",
+    "Motivational",
+    "Attitude"
   ],
   "shayari_list": [
     {
       "id": 101,
       "category": "Love",
-      "text": "तेरी मुस्कान ही मेरी पहचान बन गई,\nतेरी खुशी ही मेरी जान बन गई,\nकुछ इस कदर बसाया तुझे दिल में,\nकि तेरी याद ही मेरी सुबह-शाम बन गई।",
+      "text": "कुछ लोग दिल से\nबहुत अच्छे होते हैं...\nबस किस्मत से नहीं मिलते...",
       "author": "Shayari Lok"
     },
     {
       "id": 102,
-      "category": "Love",
-      "text": "Kuch alfaaz bina kahe hi samajh liye jaate hain,\nKuch rishte bina sharton ke hi nibhaaye jaate hain.",
-      "author": "Dil Se"
+      "category": "Sad",
+      "text": "तन्हाई भी क्या चीज़ है...\nजब अपने ही साथ\nना दें...",
+      "author": "Ehsaas"
     },
     {
       "id": 103,
-      "category": "Attitude",
-      "text": "हम अपने अंदाज़ में ही मस्त रहते हैं,\nदूसरों की नकल करना हमारी फितरत में नहीं,\nवक्त आने पर जवाब खामोशी से देते हैं,\nबेवजह शोर मचाना हमारी आदत में नहीं।",
-      "author": "Shayari Lok"
-    },
-    {
-      "id": 104,
-      "category": "Attitude",
-      "text": "Apni sharton par jeena seekho,\nDuniya ki bheed toh hamesha raasta bhatkaati hai.",
-      "author": "Royal Thoughts"
-    },
-    {
-      "id": 105,
-      "category": "Motivation",
-      "text": "मंज़िलें उन्हीं को मिलती हैं,\nजिनके सपनों में जान होती है,\nसिर्फ पंखों से कुछ नहीं होता,\nहौसलों से ही असली उड़ान होती है।",
+      "category": "Motivational",
+      "text": "मुस्कुराना सीख लो यारो,\nज़िंदगी में मुश्किलें तो\nआएँगी ही...",
       "author": "Prerna"
     },
     {
+      "id": 104,
+      "category": "Love",
+      "text": "तेरी मुस्कान ही मेरी पहचान बन गई,\nतेरी खुशी ही मेरी जान बन गई,\nकुछ इस कदर बसाया तुझे दिल में,\nकि तेरी याद ही मेरी सुबह-शाम बन गई।",
+      "author": "Dil Se"
+    },
+    {
+      "id": 105,
+      "category": "Attitude",
+      "text": "हम अपने अंदाज़ में ही मस्त रहते हैं,\nदूसरों की नकल करना हमारी फितरत में नहीं,\nवक्त आने पर जवाब खामोशी से देते हैं।",
+      "author": "Royal Thoughts"
+    },
+    {
       "id": 106,
-      "category": "Motivation",
-      "text": "Raat chahe jitni bhi gehri ho,\nSubah ki pehli kiran usse hara hi deti hai.\nBas apni mehnat par bharosa rakho.",
-      "author": "Shayari Lok"
+      "category": "Motivational",
+      "text": "मंज़िलें उन्हीं को मिलती हैं,\nजिनके सपनों में जान होती है,\nसिर्फ पंखों से कुछ नहीं होता,\nहौसलों से ही असली उड़ान होती है।",
+      "author": "Udaan"
     },
     {
       "id": 107,
@@ -79,9 +86,9 @@
     },
     {
       "id": 108,
-      "category": "Sad",
-      "text": "Waqt ne sikhaya hai chup rehna,\nVarna baatein toh hamare paas bhi hazaar thin.",
-      "author": "Ehsaas"
+      "category": "Love",
+      "text": "चाँद को गुरूर है अपनी चाँदनी पर,\nऔर हमें गुरूर है तुम्हारी सादगी पर।",
+      "author": "Shayari Lok"
     }
   ]
 }

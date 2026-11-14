@@ -30,8 +30,10 @@ class ExampleRobolectricTest {
     val parsed = ShayariConfig.fromJson(DefaultShayariData.DEFAULT_CONFIG_JSON)
     assertEquals("Shayari Lok", parsed.appName)
     assertFalse(parsed.maintenanceMode)
-    assertTrue(parsed.categories.contains("All"))
+    assertTrue(parsed.categories.contains("Popular"))
     assertTrue(parsed.categories.contains("Love"))
+    assertTrue(parsed.categories.contains("Sad"))
+    assertTrue(parsed.categories.contains("Motivational"))
     assertTrue(parsed.shayariList.isNotEmpty())
     assertTrue(parsed.notifications.isNotEmpty())
   }
