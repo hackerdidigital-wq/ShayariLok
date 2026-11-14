@@ -30,10 +30,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +50,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +81,7 @@ import com.example.ui.theme.CrownGold
 import com.example.ui.theme.HeaderPurpleEnd
 import com.example.ui.theme.HeaderPurpleStart
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
   readyState: ShayariScreenState.Ready,
@@ -433,47 +438,62 @@ fun HomeScreen(
           }
 
           val items = readyState.visibleShayaris
-          if (items.isEmpty()) {
-            EmptyShayariState(
-              isFavoritesTab = readyState.activeTab == MainTab.FAVORITES,
-              modifier = Modifier.fillMaxSize().padding(24.dp),
-            )
-          } else if (gridColumns > 1) {
-            LazyVerticalGrid(
-              columns = GridCells.Fixed(gridColumns),
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-              verticalArrangement = Arrangement.spacedBy(12.dp),
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
-              modifier = Modifier.widthIn(max = 960.dp).fillMaxSize(),
-            ) {
-              items(items, key = { it.id }) { item ->
-                ShayariCard(
-                  item = item,
-                  isFavorite = item.id in readyState.favoriteIds,
-                  textSize = textSize,
-                  onCopyClick = onCopyShayari,
-                  onShareClick = onShareShayari,
-                  onFavoriteToggle = onFavoriteToggle,
-                )
+          PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = onRefreshClick,
+            modifier = Modifier.fillMaxSize().testTag("shayari_pull_to_refresh"),
+          ) {
+            if (items.isEmpty()) {
+              EmptyShayariState(
+                isFavoritesTab = readyState.activeTab == MainTab.FAVORITES,
+                modifier =
+                  Modifier.fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+              )
+            } else if (gridColumns > 1) {
+              LazyVerticalGrid(
+                columns = GridCells.Fixed(gridColumns),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier =
+                  Modifier.widthIn(max = 960.dp)
+                    .fillMaxSize()
+                    .align(Alignment.TopCenter),
+              ) {
+                items(items, key = { it.id }) { item ->
+                  ShayariCard(
+                    item = item,
+                    isFavorite = item.id in readyState.favoriteIds,
+                    textSize = textSize,
+                    onCopyClick = onCopyShayari,
+                    onShareClick = onShareShayari,
+                    onFavoriteToggle = onFavoriteToggle,
+                  )
+                }
               }
-            }
-          } else {
-            LazyColumn(
-              contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
-              verticalArrangement = Arrangement.spacedBy(12.dp),
-              modifier = Modifier.widthIn(max = 600.dp).fillMaxSize(),
-            ) {
-              items(items, key = { it.id }) { item ->
-                ShayariCard(
-                  item = item,
-                  isFavorite = item.id in readyState.favoriteIds,
-                  textSize = textSize,
-                  onCopyClick = onCopyShayari,
-                  onShareClick = onShareShayari,
-                  onFavoriteToggle = onFavoriteToggle,
-                )
+            } else {
+              LazyColumn(
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier =
+                  Modifier.widthIn(max = 600.dp)
+                    .fillMaxSize()
+                    .align(Alignment.TopCenter),
+              ) {
+                items(items, key = { it.id }) { item ->
+                  ShayariCard(
+                    item = item,
+                    isFavorite = item.id in readyState.favoriteIds,
+                    textSize = textSize,
+                    onCopyClick = onCopyShayari,
+                    onShareClick = onShareShayari,
+                    onFavoriteToggle = onFavoriteToggle,
+                  )
+                }
+                item { Spacer(modifier = Modifier.height(10.dp)) }
               }
-              item { Spacer(modifier = Modifier.height(10.dp)) }
             }
           }
         }
