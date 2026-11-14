@@ -18,7 +18,9 @@ import kotlinx.coroutines.launch
 
 enum class MainTab {
   EXPLORE,
+  COMMUNITY,
   FAVORITES,
+  PROFILE,
 }
 
 sealed interface ShayariScreenState {
@@ -315,6 +317,11 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   fun dismissUpdateDialog() {
     updateDismissedThisSession = true
     _uiState.update { it.copy(showUpdateDialog = false) }
+  }
+
+  fun markAdminNotificationsRead() {
+    repository.markNotificationsRead(currentConfig)
+    publishCurrentState(syncMessage = null)
   }
 
   fun clearSyncStatusMessage() {

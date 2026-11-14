@@ -7,6 +7,6 @@
     public static int i(...);
     public static int d(...);
 }
--keepattributes SourceFile,LineNumberTable
+-keepattributes *Annotation*,Signature,SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
-
+-keep class com.example.model.** { *; }

@@ -127,6 +127,7 @@ fun HomeScreen(
   onCopyShayari: (ShayariItem) -> Unit,
   onShareShayari: (ShayariItem) -> Unit,
   onFavoriteToggle: (Int) -> Unit,
+  socialTabContent: @Composable (MainTab) -> Unit,
 ) {
   var isMenuExpanded by remember { mutableStateOf(false) }
 
@@ -136,7 +137,9 @@ fun HomeScreen(
   BackHandler(enabled = !isMenuExpanded && isSearchVisible) {
     onToggleSearch()
   }
-  BackHandler(enabled = !isMenuExpanded && !isSearchVisible && readyState.activeTab == MainTab.FAVORITES) {
+  BackHandler(
+    enabled = !isMenuExpanded && !isSearchVisible && readyState.activeTab != MainTab.EXPLORE
+  ) {
     onSelectTab(MainTab.EXPLORE)
   }
 
@@ -324,6 +327,27 @@ fun HomeScreen(
                     modifier = Modifier.testTag("menu_community_item"),
                   )
                 }
+                DropdownMenuItem(
+                  text = {
+                    Text(
+                      text = stringResource(R.string.settings_title),
+                      color = Color(0xFF1D0D36),
+                    )
+                  },
+                  leadingIcon = {
+                    Icon(
+                      painter = painterResource(id = R.drawable.ic_settings),
+                      contentDescription = null,
+                      tint = BadgePurple,
+                      modifier = Modifier.size(20.dp),
+                    )
+                  },
+                  onClick = {
+                    isMenuExpanded = false
+                    onSettingsClick()
+                  },
+                  modifier = Modifier.testTag("menu_settings_item"),
+                )
               }
             }
 
@@ -390,16 +414,28 @@ fun HomeScreen(
               }
             }
 
-            HeaderIconButton(
-              iconRes = R.drawable.ic_search,
-              contentDescription = "Search Shayari",
-              tint = if (isSearchVisible) CrownGold else Color.White,
-              testTag = "search_button",
-              onClick = onToggleSearch,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              HeaderBellButton(
+                unreadCount = unreadNotificationCount,
+                onClick = onNotificationsClick,
+              )
+              if (readyState.activeTab == MainTab.EXPLORE || readyState.activeTab == MainTab.FAVORITES) {
+                HeaderIconButton(
+                  iconRes = R.drawable.ic_search,
+                  contentDescription = "Search Shayari",
+                  tint = if (isSearchVisible) CrownGold else Color.White,
+                  testTag = "search_button",
+                  onClick = onToggleSearch,
+                )
+              }
+            }
           }
 
-          AnimatedVisibility(visible = isSearchVisible) {
+          AnimatedVisibility(
+            visible =
+              isSearchVisible &&
+                (readyState.activeTab == MainTab.EXPLORE || readyState.activeTab == MainTab.FAVORITES)
+          ) {
             OutlinedTextField(
               value = readyState.searchQuery,
               onValueChange = onSearchQueryChange,
@@ -443,7 +479,6 @@ fun HomeScreen(
             unreadNotificationCount = unreadNotificationCount,
             onSelectTab = onSelectTab,
             onNotificationsClick = onNotificationsClick,
-            onSettingsClick = onSettingsClick,
           )
         }
       },
@@ -469,6 +504,19 @@ fun HomeScreen(
               modifier = Modifier.testTag("nav_home"),
             )
             NavigationRailItem(
+              selected = readyState.activeTab == MainTab.COMMUNITY,
+              onClick = { onSelectTab(MainTab.COMMUNITY) },
+              icon = {
+                Icon(
+                  painter = painterResource(id = R.drawable.ic_community),
+                  contentDescription = stringResource(R.string.tab_community),
+                  modifier = Modifier.size(22.dp),
+                )
+              },
+              label = { Text(stringResource(R.string.tab_community)) },
+              modifier = Modifier.testTag("nav_community"),
+            )
+            NavigationRailItem(
               selected = readyState.activeTab == MainTab.FAVORITES,
               onClick = { onSelectTab(MainTab.FAVORITES) },
               icon = {
@@ -491,8 +539,21 @@ fun HomeScreen(
                   modifier = Modifier.size(22.dp),
                 )
               },
-              label = { Text("Alerts") },
+              label = { Text(stringResource(R.string.tab_alerts)) },
               modifier = Modifier.testTag("nav_notifications"),
+            )
+            NavigationRailItem(
+              selected = readyState.activeTab == MainTab.PROFILE,
+              onClick = { onSelectTab(MainTab.PROFILE) },
+              icon = {
+                Icon(
+                  painter = painterResource(id = R.drawable.ic_person),
+                  contentDescription = stringResource(R.string.tab_profile),
+                  modifier = Modifier.size(22.dp),
+                )
+              },
+              label = { Text(stringResource(R.string.tab_profile)) },
+              modifier = Modifier.testTag("nav_profile"),
             )
             NavigationRailItem(
               selected = false,
@@ -514,6 +575,9 @@ fun HomeScreen(
           modifier = Modifier.fillMaxSize(),
           horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+          if (readyState.activeTab == MainTab.COMMUNITY || readyState.activeTab == MainTab.PROFILE) {
+            socialTabContent(readyState.activeTab)
+          } else {
           if (readyState.activeTab == MainTab.EXPLORE) {
             LazyRow(
               contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
@@ -642,6 +706,52 @@ fun HomeScreen(
               }
             }
           }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun HeaderBellButton(
+  unreadCount: Int,
+  onClick: () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  Box(
+    contentAlignment = Alignment.Center,
+    modifier =
+      Modifier.minimumInteractiveComponentSize()
+        .size(48.dp)
+        .clickable(
+          interactionSource = interactionSource,
+          indication = null,
+          onClick = onClick,
+        )
+        .testTag("top_notifications_bell"),
+  ) {
+    Box(contentAlignment = Alignment.TopEnd) {
+      Icon(
+        painter = painterResource(id = R.drawable.ic_notification),
+        contentDescription = stringResource(R.string.cd_notifications),
+        tint = if (unreadCount > 0) CrownGold else Color.White,
+        modifier = Modifier.size(23.dp),
+      )
+      if (unreadCount > 0) {
+        Box(
+          contentAlignment = Alignment.Center,
+          modifier =
+            Modifier.offset(x = 6.dp, y = (-4).dp)
+              .size(16.dp)
+              .background(Color(0xFFEF233C), CircleShape),
+        ) {
+          Text(
+            text = if (unreadCount > 9) "9+" else unreadCount.toString(),
+            color = Color.White,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+          )
         }
       }
     }
@@ -684,7 +794,6 @@ private fun CleanWhiteBottomBar(
   unreadNotificationCount: Int,
   onSelectTab: (MainTab) -> Unit,
   onNotificationsClick: () -> Unit,
-  onSettingsClick: () -> Unit,
 ) {
   Surface(
     color = Color.White,
@@ -698,7 +807,7 @@ private fun CleanWhiteBottomBar(
           Modifier.fillMaxWidth()
             .navigationBarsPadding()
             .height(64.dp)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 4.dp),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically,
       ) {
@@ -712,6 +821,15 @@ private fun CleanWhiteBottomBar(
           modifier = Modifier.weight(1f),
         )
         BottomBarTabItem(
+          label = stringResource(R.string.tab_community),
+          iconRes = R.drawable.ic_community,
+          selected = activeTab == MainTab.COMMUNITY,
+          badgeCount = 0,
+          testTag = "nav_community",
+          onClick = { onSelectTab(MainTab.COMMUNITY) },
+          modifier = Modifier.weight(1f),
+        )
+        BottomBarTabItem(
           label = stringResource(R.string.tab_favorites),
           iconRes = R.drawable.ic_heart_filled,
           selected = activeTab == MainTab.FAVORITES,
@@ -721,7 +839,7 @@ private fun CleanWhiteBottomBar(
           modifier = Modifier.weight(1f),
         )
         BottomBarTabItem(
-          label = "Notifications",
+          label = stringResource(R.string.tab_alerts),
           iconRes = R.drawable.ic_notification,
           selected = false,
           badgeCount = unreadNotificationCount,
@@ -730,12 +848,12 @@ private fun CleanWhiteBottomBar(
           modifier = Modifier.weight(1f),
         )
         BottomBarTabItem(
-          label = "Settings",
-          iconRes = R.drawable.ic_settings,
-          selected = false,
+          label = stringResource(R.string.tab_profile),
+          iconRes = R.drawable.ic_person,
+          selected = activeTab == MainTab.PROFILE,
           badgeCount = 0,
-          testTag = "nav_settings",
-          onClick = onSettingsClick,
+          testTag = "nav_profile",
+          onClick = { onSelectTab(MainTab.PROFILE) },
           modifier = Modifier.weight(1f),
         )
       }

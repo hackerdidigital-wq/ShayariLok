@@ -35,4 +35,15 @@
     <string name="offline_dialog_title">इन्टरनेट कनेक्शन नहीं है</string>
     <string name="offline_dialog_message">कृपया अपना इंटरनेट चालू करें और \'रीसराय\' (Retry) बटन दबाएं।</string>
     <string name="action_retry_hindi">रीसराय (Retry)</string>
+    <string name="tab_community">Friends</string>
+    <string name="tab_profile">Profile</string>
+    <string name="tab_alerts">Alerts</string>
+    <string name="handle_copied_snackbar">Unique ID copied!</string>
+    <string name="social_connect_title">Shayari Lok Social Club</string>
+    <string name="social_connect_subtitle">One-tap Google connect unlocks live Friends search, Follow &amp; Likes, Private Chat, and Instant Alerts. No password needed!</string>
+    <string name="social_connect_button">Continue with Google</string>
+    <string name="empty_community_title">No Shayars found yet</string>
+    <string name="empty_community_subtitle">Try a different Name, City, or @SL_ handle to discover friends.</string>
+    <string name="empty_chats_title">No conversations yet</string>
+    <string name="empty_chats_subtitle">Tap any friend in the Friends tab to start a fast 1-on-1 Shayari chat.</string>
 </resources>

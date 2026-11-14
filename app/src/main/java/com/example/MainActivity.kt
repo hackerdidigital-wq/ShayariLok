@@ -39,8 +39,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -57,12 +59,20 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.DeviceIdentityHelper
+import com.example.data.SocialRepository
 import com.example.model.ShayariItem
+import com.example.ui.MainTab
 import com.example.ui.ShayariScreenState
 import com.example.ui.ShayariViewModel
+import com.example.ui.SocialViewModel
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.MaintenanceScreen
+import com.example.ui.screens.MyProfileScreen
+import com.example.ui.screens.RealTimeChatScreen
 import com.example.ui.screens.ShayariSplashScreen
+import com.example.ui.screens.SocialCommunityScreen
+import com.example.ui.screens.UnifiedAlertsSheet
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.ShayariLokTheme
 import kotlinx.coroutines.launch
@@ -80,11 +90,49 @@ class MainActivity : ComponentActivity() {
         val snackbarHostState = remember { SnackbarHostState() }
         val coroutineScope = rememberCoroutineScope()
         val copiedMessage = stringResource(R.string.copied_snackbar)
+        val handleCopiedMessage = stringResource(R.string.handle_copied_snackbar)
+
+        val deviceHandle = remember { DeviceIdentityHelper.getOrCreateDeviceHandle(context) }
+        val localUserId = remember(deviceHandle) {
+          "local_${deviceHandle.removePrefix("@").lowercase()}"
+        }
+        val socialRepository = remember { SocialRepository(context) }
+        val socialViewModel: SocialViewModel =
+          viewModel(
+            key = "local_social_$localUserId",
+            factory =
+              SocialViewModel.factory(
+                repository = socialRepository,
+                currentUserId = localUserId,
+                defaultHandle = deviceHandle,
+                defaultName = "Shayari Lover",
+              ),
+          )
+        val socialState by socialViewModel.uiState.collectAsStateWithLifecycle()
+        var showAlertsSheet by remember { mutableStateOf(false) }
+
+        val copyHandleToClipboard: (String) -> Unit = { handle ->
+          copyPlainText(context, "Shayari Lok ID", handle)
+          coroutineScope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(handleCopiedMessage)
+          }
+        }
+
+        LaunchedEffect(socialState.actionFeedback) {
+          val msg = socialState.actionFeedback
+          if (!msg.isNullOrBlank()) {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            snackbarHostState.showSnackbar(msg)
+            socialViewModel.clearActionFeedback()
+          }
+        }
 
         DisposableEffect(lifecycleOwner) {
           val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
               viewModel.onAppResumed()
+              socialViewModel.refreshCommunity()
             }
           }
           lifecycleOwner.lifecycle.addObserver(observer)
@@ -98,6 +146,8 @@ class MainActivity : ComponentActivity() {
             viewModel.clearSyncStatusMessage()
           }
         }
+
+        val totalUnreadAlerts = uiState.unreadNotificationCount + socialState.unreadNotificationsCount
 
         AnimatedContent(
           targetState =
@@ -138,40 +188,111 @@ class MainActivity : ComponentActivity() {
             else -> {
               val ready = uiState.screenState as? ShayariScreenState.Ready
               if (ready != null) {
-                HomeScreen(
-                  readyState = ready,
-                  textSize = uiState.textSize,
-                  isRefreshing = uiState.isRefreshing,
-                  isSearchVisible = uiState.isSearchVisible,
-                  unreadNotificationCount = uiState.unreadNotificationCount,
-                  snackbarHostState = snackbarHostState,
-                  onSelectCategory = viewModel::selectCategory,
-                  onSelectTab = viewModel::selectTab,
-                  onToggleSearch = viewModel::toggleSearchVisibility,
-                  onSearchQueryChange = viewModel::updateSearchQuery,
-                  onRefreshClick = { viewModel.refreshConfig(isSilentSync = false) },
-                  onNotificationsClick = {
-                    context.startActivity(Intent(context, NotificationsActivity::class.java))
-                  },
-                  onSettingsClick = {
-                    context.startActivity(Intent(context, SettingsActivity::class.java))
-                  },
-                  onShareAppClick = {
-                    shareAppWithFriends(context, ready.config.appName)
-                  },
-                  onOpenCommunityClick = { url -> openExternalBrowser(context, url) },
-                  onCopyShayari = { item ->
-                    copyShayariToClipboard(context, item)
-                    coroutineScope.launch {
-                      snackbarHostState.currentSnackbarData?.dismiss()
-                      snackbarHostState.showSnackbar(copiedMessage)
-                    }
-                  },
-                  onShareShayari = { item ->
-                    shareShayari(context, ready.config.appName, item)
-                  },
-                  onFavoriteToggle = viewModel::toggleFavorite,
-                )
+                val activePartner = socialState.activeChatPartner
+                if (activePartner != null) {
+                  RealTimeChatScreen(
+                    currentUserId = socialState.currentUserId,
+                    partner = activePartner,
+                    messages = socialState.activeChatMessages,
+                    isFollowingPartner = activePartner.userId in socialState.followingIds,
+                    isBlocked = socialState.myProfile.isBlocked,
+                    blockReason = socialState.myProfile.blockReason,
+                    onToggleFollowPartner = { socialViewModel.toggleFollow(activePartner) },
+                    onSendMessage = { text, onSent ->
+                      socialViewModel.sendMessage(text, onSent)
+                    },
+                    onMarkMessagesRead = socialViewModel::markActiveChatMessagesRead,
+                    onBack = socialViewModel::closeChat,
+                  )
+                } else {
+                  HomeScreen(
+                    readyState = ready,
+                    textSize = uiState.textSize,
+                    isRefreshing = uiState.isRefreshing,
+                    isSearchVisible = uiState.isSearchVisible,
+                    unreadNotificationCount = totalUnreadAlerts,
+                    snackbarHostState = snackbarHostState,
+                    onSelectCategory = viewModel::selectCategory,
+                    onSelectTab = { selectedTab ->
+                      viewModel.selectTab(selectedTab)
+                      if (selectedTab == MainTab.COMMUNITY || selectedTab == MainTab.PROFILE) {
+                        socialViewModel.refreshCommunity()
+                      }
+                    },
+                    onToggleSearch = viewModel::toggleSearchVisibility,
+                    onSearchQueryChange = viewModel::updateSearchQuery,
+                    onRefreshClick = {
+                      viewModel.refreshConfig(isSilentSync = false)
+                      socialViewModel.refreshCommunity()
+                    },
+                    onNotificationsClick = {
+                      viewModel.markAdminNotificationsRead()
+                      showAlertsSheet = true
+                    },
+                    onSettingsClick = {
+                      context.startActivity(Intent(context, SettingsActivity::class.java))
+                    },
+                    onShareAppClick = {
+                      shareAppWithFriends(context, ready.config.appName)
+                    },
+                    onOpenCommunityClick = { url -> openExternalBrowser(context, url) },
+                    onCopyShayari = { item ->
+                      copyShayariToClipboard(context, item)
+                      coroutineScope.launch {
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        snackbarHostState.showSnackbar(copiedMessage)
+                      }
+                    },
+                    onShareShayari = { item ->
+                      shareShayari(context, ready.config.appName, item)
+                    },
+                    onFavoriteToggle = viewModel::toggleFavorite,
+                    socialTabContent = { tab ->
+                      if (tab == MainTab.COMMUNITY) {
+                        SocialCommunityScreen(
+                          uiState = socialState,
+                          onSearchQueryChange = socialViewModel::updateSearchQuery,
+                          onSelectFilter = socialViewModel::selectFilter,
+                          onInspectProfile = socialViewModel::inspectProfile,
+                          onDismissProfileSheet = socialViewModel::dismissProfileSheet,
+                          onToggleFollow = socialViewModel::toggleFollow,
+                          onToggleLike = socialViewModel::toggleLike,
+                          onOpenChatWith = socialViewModel::openChatWith,
+                          onOpenChatRoom = socialViewModel::openChatFromRoom,
+                          onAddFriend = { name, handle, city, bio, onDone ->
+                            socialViewModel.addFriend(name, handle, city, bio, onDone)
+                          },
+                        )
+                      } else {
+                        MyProfileScreen(
+                          uiState = socialState,
+                          onCopyHandle = copyHandleToClipboard,
+                          onUpdateProfile = { name, city, address, bio, onDone ->
+                            socialViewModel.updateProfile(name, city, address, bio, onDone)
+                          },
+                          onOpenChatRoom = socialViewModel::openChatFromRoom,
+                          onOpenSettings = {
+                            context.startActivity(Intent(context, SettingsActivity::class.java))
+                          },
+                        )
+                      }
+                    },
+                  )
+                }
+
+                if (showAlertsSheet) {
+                  UnifiedAlertsSheet(
+                    adminNotifications = ready.config.notifications,
+                    socialState = socialState,
+                    onSocialNotificationClick = { notif ->
+                      showAlertsSheet = false
+                      viewModel.selectTab(MainTab.COMMUNITY)
+                      socialViewModel.openFromNotification(notif)
+                    },
+                    onMarkSocialRead = socialViewModel::markAllNotificationsRead,
+                    onDismiss = { showAlertsSheet = false },
+                  )
+                }
 
                 if (uiState.showUpdateDialog) {
                   AlertDialog(
@@ -303,10 +424,13 @@ private fun CleanNoInternetDialog(
   )
 }
 
-private fun copyShayariToClipboard(context: Context, item: ShayariItem) {
+private fun copyPlainText(context: Context, label: String, text: String) {
   val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
-  val clip = ClipData.newPlainText("Shayari", item.text)
-  clipboard.setPrimaryClip(clip)
+  clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+}
+
+private fun copyShayariToClipboard(context: Context, item: ShayariItem) {
+  copyPlainText(context, "Shayari", item.text)
 }
 
 private fun shareShayari(context: Context, appName: String, item: ShayariItem) {
