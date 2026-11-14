@@ -73,7 +73,7 @@ class ShayariRepository(context: Context) {
   }
 
   private fun buildNotificationSignature(config: ShayariConfig): String =
-    config.notifications.joinToString("|") { "${it.id}:${it.title}" }
+    config.notifications.joinToString("|") { "${it.id}:${it.title}:${it.message}" }
 
   fun getFavoriteIds(): Set<Int> {
     val rawSet = prefs.getStringSet(KEY_FAVORITE_IDS, emptySet()) ?: emptySet()
@@ -91,16 +91,18 @@ class ShayariRepository(context: Context) {
     return updated
   }
 
-  suspend fun fetchRemoteConfig(): Result<ShayariConfig> =
+  suspend fun fetchRemoteConfig(
+    endpoints: List<String> = DefaultShayariData.REMOTE_CONFIG_ENDPOINTS
+  ): Result<ShayariConfig> =
     withContext(Dispatchers.IO) {
       if (!isNetworkAvailable()) {
         return@withContext Result.failure(IllegalStateException("Offline Mode: No Internet Connection"))
       }
 
       var lastError: Exception? = null
-      for (endpoint in DefaultShayariData.REMOTE_CONFIG_ENDPOINTS) {
+      for (endpoint in endpoints) {
         try {
-          val rawJson = fetchJsonFromUrl(endpoint)
+          val rawJson = fetchJsonFromUrl(buildCacheBustedUrl(endpoint))
           val parsedConfig = ShayariConfig.fromJson(rawJson)
           val now = System.currentTimeMillis()
           prefs.edit()
@@ -116,6 +118,14 @@ class ShayariRepository(context: Context) {
       Result.failure(lastError ?: IllegalStateException("Unable to reach server config.json"))
     }
 
+  internal fun buildCacheBustedUrl(
+    endpoint: String,
+    timestampMillis: Long = System.currentTimeMillis(),
+  ): String {
+    val separator = if (endpoint.contains("?")) "&" else "?"
+    return "${endpoint}${separator}t=${timestampMillis}"
+  }
+
   private fun fetchJsonFromUrl(endpoint: String): String {
     var connection: HttpURLConnection? = null
     try {
@@ -128,14 +138,15 @@ class ShayariRepository(context: Context) {
           readTimeout = READ_TIMEOUT_MS
           useCaches = false
           setRequestProperty("Accept", "application/json")
-          setRequestProperty("Cache-Control", "no-cache")
+          setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
+          setRequestProperty("Pragma", "no-cache")
           setRequestProperty("User-Agent", "ShayariLok-Android/1.0")
         }
 
       val responseCode = connection.responseCode
       if (responseCode !in 200..299) {
         connection.errorStream?.close()
-        throw IllegalStateException("Server responded with HTTP $responseCode")
+        throw IllegalStateException("HTTP $responseCode")
       }
 
       return BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { reader ->
@@ -221,7 +232,7 @@ class ShayariRepository(context: Context) {
     private const val KEY_FAVORITE_IDS = "favorite_shayari_ids"
     private const val KEY_TEXT_SIZE = "shayari_text_size"
     private const val KEY_SEEN_NOTIFICATIONS_SIG = "seen_notifications_sig"
-    private const val CONNECT_TIMEOUT_MS = 8000
-    private const val READ_TIMEOUT_MS = 8000
+    private const val CONNECT_TIMEOUT_MS = 10000
+    private const val READ_TIMEOUT_MS = 10000
   }
 }

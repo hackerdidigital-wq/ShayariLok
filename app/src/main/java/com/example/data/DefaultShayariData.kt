@@ -1,17 +1,18 @@
 package com.example.data
 
 object DefaultShayariData {
-  // Primary GitHub Raw config.json URL hosted on the ShayariLok Admin repository
+  // Primary GitHub Raw config.json URL hosted on the live ShayariLok repository (verified HTTP 200)
   const val DEFAULT_REMOTE_CONFIG_URL =
-    "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok-Admin-/main/config.json"
+    "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok/main/config.json"
 
-  // Ordered fallback endpoints in case config.json is published under public/ or GitHub Pages
+  // Ordered fallback endpoints: primary GitHub Raw -> jsDelivr CDN mirror -> Admin repo fallbacks
   val REMOTE_CONFIG_ENDPOINTS =
     listOf(
       DEFAULT_REMOTE_CONFIG_URL,
-      "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok-Admin-/main/public/config.json",
+      "https://cdn.jsdelivr.net/gh/hackerdidigital-wq/ShayariLok@main/config.json",
+      "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok-Admin-/main/config.json",
+      "https://cdn.jsdelivr.net/gh/hackerdidigital-wq/ShayariLok-Admin-@main/config.json",
       "https://hackerdidigital-wq.github.io/ShayariLok-Admin-/config.json",
-      "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok-Admin-/master/config.json",
     )
 
   // Bundled starter config matching the live Admin Panel config.json 1:1

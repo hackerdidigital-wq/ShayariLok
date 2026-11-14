@@ -88,27 +88,27 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
       ),
       PolicySection(
         number = "02",
-        title = "Local Offline Storage (SharedPreferences)",
+        title = "Device Preferences & Favorites",
         body =
-          "Your saved favorite Shayari items, reading text size preference, and the last synced Shayari catalog are stored strictly on your device inside Android SharedPreferences. Clearing app data or uninstalling the app deletes all local records immediately.",
+          "Your saved favorite Shayari items and reading text size preference are stored privately on your device so your reading experience stays personalized. Clearing app data or uninstalling the app removes them immediately.",
       ),
       PolicySection(
         number = "03",
-        title = "Read-Only Network Sync",
+        title = "Live Content Sync",
         body =
-          "The app requests only minimal standard network permissions (INTERNET and ACCESS_NETWORK_STATE) to fetch public, read-only Shayari updates and app announcements from the remote configuration feed. No analytics trackers, behavioral profiling, or invasive SDKs are bundled.",
+          "The app requests only standard internet access to fetch fresh Shayari updates and announcements. No analytics trackers, behavioral profiling, or invasive SDKs are included.",
       ),
       PolicySection(
         number = "04",
         title = "Clipboard & System Share Sheet",
         body =
-          "When you tap Copy or Share on a Shayari card, the app interacts only with Android's built-in ClipboardManager or system share chooser on your explicit action. Clipboard contents are never read in the background.",
+          "When you tap Copy or Share on a Shayari card, the app interacts only with Android's built-in Clipboard or system share chooser on your explicit action. Clipboard contents are never read in the background.",
       ),
       PolicySection(
         number = "05",
         title = "Updates & Contact Information",
         body =
-          "This privacy policy applies to Shayari Lok (${BuildConfig.APPLICATION_ID}). As new features or content categories are added, any policy updates will be reflected directly inside this screen alongside the current version (${BuildConfig.VERSION_NAME}).",
+          "This privacy policy applies to Shayari Lok. As new features or content categories are added, any policy updates will be reflected directly inside this screen alongside the current version (${BuildConfig.VERSION_NAME}).",
       ),
     )
 
@@ -190,13 +190,13 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
               )
               Spacer(modifier = Modifier.height(2.dp))
               Text(
-                text = "100% Offline-First & No-Login Policy",
+                text = "Privacy-First & No-Login Commitment",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
               )
               Spacer(modifier = Modifier.height(4.dp))
               Text(
-                text = "Package: ${BuildConfig.APPLICATION_ID} • v${BuildConfig.VERSION_NAME}",
+                text = "Version ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
               )

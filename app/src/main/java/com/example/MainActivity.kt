@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -22,6 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -39,7 +43,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -71,7 +77,7 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(lifecycleOwner) {
           val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-              viewModel.reloadFromCache()
+              viewModel.onAppResumed()
             }
           }
           lifecycleOwner.lifecycle.addObserver(observer)
@@ -109,8 +115,6 @@ class MainActivity : ComponentActivity() {
               readyState = screen,
               textSize = uiState.textSize,
               isRefreshing = uiState.isRefreshing,
-              isOffline = uiState.isOfflineBannerVisible,
-              isNetworkConnected = uiState.isNetworkConnected,
               isSearchVisible = uiState.isSearchVisible,
               unreadNotificationCount = uiState.unreadNotificationCount,
               snackbarHostState = snackbarHostState,
@@ -118,8 +122,7 @@ class MainActivity : ComponentActivity() {
               onSelectTab = viewModel::selectTab,
               onToggleSearch = viewModel::toggleSearchVisibility,
               onSearchQueryChange = viewModel::updateSearchQuery,
-              onRefreshClick = { viewModel.refreshConfig(isInitialAutoSync = false) },
-              onRetryConnection = viewModel::retryConnection,
+              onRefreshClick = { viewModel.refreshConfig(isSilentSync = false) },
               onNotificationsClick = {
                 context.startActivity(Intent(context, NotificationsActivity::class.java))
               },
@@ -176,11 +179,9 @@ class MainActivity : ComponentActivity() {
         }
 
         if (uiState.showOfflineDialog) {
-          OfflineAlertDialog(
-            isNetworkConnected = uiState.isNetworkConnected,
+          CleanNoInternetDialog(
             isRetrying = uiState.isRefreshing,
             onRetryClick = viewModel::retryConnection,
-            onDismissClick = viewModel::dismissOfflineDialog,
           )
         }
       }
@@ -189,22 +190,34 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun OfflineAlertDialog(
-  isNetworkConnected: Boolean,
+private fun CleanNoInternetDialog(
   isRetrying: Boolean,
   onRetryClick: () -> Unit,
-  onDismissClick: () -> Unit,
 ) {
   AlertDialog(
-    onDismissRequest = onDismissClick,
+    onDismissRequest = {},
+    properties =
+      DialogProperties(
+        dismissOnBackPress = false,
+        dismissOnClickOutside = false,
+      ),
+    shape = RoundedCornerShape(24.dp),
     containerColor = Color.White,
     icon = {
-      Icon(
-        painter = painterResource(id = R.drawable.ic_wifi_off),
-        contentDescription = null,
-        tint = Color(0xFFB91C1C),
-        modifier = Modifier.size(30.dp),
-      )
+      Surface(
+        shape = CircleShape,
+        color = Color(0xFFF3E8FF),
+        modifier = Modifier.size(56.dp),
+      ) {
+        Box(contentAlignment = Alignment.Center) {
+          Icon(
+            painter = painterResource(id = R.drawable.ic_wifi_off),
+            contentDescription = null,
+            tint = BadgePurple,
+            modifier = Modifier.size(28.dp),
+          )
+        }
+      }
     },
     title = {
       Text(
@@ -212,32 +225,33 @@ private fun OfflineAlertDialog(
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Bold,
         color = Color(0xFF1D0D36),
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
       )
     },
     text = {
       Text(
-        text =
-          stringResource(
-            if (isNetworkConnected) {
-              R.string.offline_server_unreachable_message
-            } else {
-              R.string.offline_dialog_message
-            }
-          ),
+        text = stringResource(R.string.offline_dialog_message),
         style = MaterialTheme.typography.bodyMedium,
         color = Color(0xFF473E5C),
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
       )
     },
     confirmButton = {
       Button(
         onClick = onRetryClick,
         enabled = !isRetrying,
+        shape = RoundedCornerShape(14.dp),
         colors =
           ButtonDefaults.buttonColors(
             containerColor = BadgePurple,
             contentColor = Color.White,
           ),
-        modifier = Modifier.minimumInteractiveComponentSize().testTag("offline_dialog_retry_button"),
+        modifier =
+          Modifier.fillMaxWidth()
+            .minimumInteractiveComponentSize()
+            .testTag("offline_dialog_retry_button"),
       ) {
         if (isRetrying) {
           Row(verticalAlignment = Alignment.CenterVertically) {
@@ -247,22 +261,14 @@ private fun OfflineAlertDialog(
               modifier = Modifier.size(16.dp),
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = stringResource(R.string.action_retry))
+            Text(text = stringResource(R.string.action_retry_hindi))
           }
         } else {
-          Text(text = stringResource(R.string.action_retry_hindi))
+          Text(
+            text = stringResource(R.string.action_retry_hindi),
+            fontWeight = FontWeight.SemiBold,
+          )
         }
-      }
-    },
-    dismissButton = {
-      TextButton(
-        onClick = onDismissClick,
-        modifier = Modifier.minimumInteractiveComponentSize().testTag("offline_dialog_dismiss_button"),
-      ) {
-        Text(
-          text = stringResource(R.string.action_continue_offline),
-          color = Color(0xFF5D5475),
-        )
       }
     },
   )

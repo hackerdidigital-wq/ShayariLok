@@ -93,6 +93,17 @@ private fun NotificationsContent(
     repository.markNotificationsRead(config)
   }
 
+  LaunchedEffect(Unit) {
+    if (repository.isNetworkAvailable()) {
+      isRefreshing = true
+      repository.fetchRemoteConfig().onSuccess { updated ->
+        config = updated
+        repository.markNotificationsRead(updated)
+      }
+      isRefreshing = false
+    }
+  }
+
   val bgGradient =
     Brush.verticalGradient(
       colors =
@@ -137,10 +148,16 @@ private fun NotificationsContent(
                       onSuccess = { updated ->
                         config = updated
                         repository.markNotificationsRead(updated)
-                        snackbarHostState.showSnackbar("Checked latest updates")
+                        snackbarHostState.showSnackbar("नई सूचनाएँ ताज़ा हो गईं")
                       },
                       onFailure = {
-                        snackbarHostState.showSnackbar("Offline mode: showing saved alerts")
+                        val msg =
+                          if (repository.isNetworkAvailable()) {
+                            "सभी सूचनाएँ अप-टू-डेट हैं"
+                          } else {
+                            "इन्टरनेट कनेक्शन नहीं है"
+                          }
+                        snackbarHostState.showSnackbar(msg)
                       },
                     )
                     isRefreshing = false

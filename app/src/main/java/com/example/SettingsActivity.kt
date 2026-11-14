@@ -99,7 +99,7 @@ private fun SettingsContent(
   val formattedSyncTime =
     remember(lastSyncedMillis) {
       if (lastSyncedMillis <= 0L) {
-        "Offline Starter Collection"
+        "अभी ताज़ा नहीं हुआ"
       } else {
         SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(lastSyncedMillis))
       }
@@ -199,7 +199,7 @@ private fun SettingsContent(
           }
         }
 
-        // 2. Offline Cache Status (Read-Only Summary)
+        // 2. Shayari Collection Status
         Surface(
           shape = RoundedCornerShape(20.dp),
           color = MaterialTheme.colorScheme.surface,
@@ -212,7 +212,7 @@ private fun SettingsContent(
               verticalAlignment = Alignment.CenterVertically,
             ) {
               Text(
-                text = "Offline Library",
+                text = "Shayari Collection",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
               )
@@ -221,7 +221,7 @@ private fun SettingsContent(
                 color = MaterialTheme.colorScheme.primaryContainer,
               ) {
                 Text(
-                  text = if (hasRemoteCache) "Synced" else "Offline Ready",
+                  text = if (hasRemoteCache) "Live Synced" else "Ready",
                   style = MaterialTheme.typography.labelSmall,
                   fontWeight = FontWeight.SemiBold,
                   color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -232,7 +232,7 @@ private fun SettingsContent(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
               text =
-                "Last updated: $formattedSyncTime • ${config.shayariList.size} Shayari saved offline",
+                "Last updated: $formattedSyncTime • ${config.shayariList.size} Shayari available",
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

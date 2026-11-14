@@ -8,6 +8,8 @@ import com.example.data.ShayariRepository
 import com.example.data.ShayariTextSize
 import com.example.model.ShayariConfig
 import com.example.model.ShayariItem
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -69,9 +71,7 @@ sealed interface ShayariScreenState {
 data class ShayariUiState(
   val screenState: ShayariScreenState = ShayariScreenState.Loading,
   val isRefreshing: Boolean = false,
-  val isUsingCachedData: Boolean = false,
   val isNetworkConnected: Boolean = true,
-  val isServerUnreachable: Boolean = false,
   val showOfflineDialog: Boolean = false,
   val lastSyncedAtMillis: Long = 0L,
   val textSize: ShayariTextSize = ShayariTextSize.MEDIUM,
@@ -80,10 +80,7 @@ data class ShayariUiState(
   val syncStatusMessage: String? = null,
   val showUpdateDialog: Boolean = false,
   val unreadNotificationCount: Int = 0,
-) {
-  val isOfflineBannerVisible: Boolean
-    get() = !isNetworkConnected || isServerUnreachable
-}
+)
 
 class ShayariViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -101,6 +98,9 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   private var searchQuery: String = ""
   private var updateDismissedThisSession: Boolean = false
   private var hasObservedInitialNetworkState: Boolean = false
+  private var hasPendingRemoteSync: Boolean = false
+  private var disconnectDebounceJob: Job? = null
+  private var silentRetryJob: Job? = null
 
   init {
     val initialOnline = repository.isNetworkAvailable()
@@ -110,42 +110,49 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         showOfflineDialog = !initialOnline,
       )
     }
-    publishCurrentState(
-      isUsingCached = !repository.hasCachedRemoteConfig(),
-      syncMessage = null,
-    )
+    publishCurrentState(syncMessage = null)
     observeConnectivity()
-    refreshConfig(isInitialAutoSync = true)
+    refreshConfig(isSilentSync = true)
   }
 
   private fun observeConnectivity() {
     viewModelScope.launch {
       repository.observeNetworkConnectivity().collect { isConnected ->
         val wasConnected = _uiState.value.isNetworkConnected
-        _uiState.update { current ->
-          if (!isConnected) {
-            current.copy(
-              isNetworkConnected = false,
-              showOfflineDialog = true,
-            )
-          } else {
+
+        if (isConnected) {
+          disconnectDebounceJob?.cancel()
+          _uiState.update { current ->
             current.copy(
               isNetworkConnected = true,
-              showOfflineDialog = if (current.isServerUnreachable) current.showOfflineDialog else false,
+              showOfflineDialog = false,
             )
           }
-        }
-
-        if (hasObservedInitialNetworkState && isConnected && !wasConnected) {
-          // Internet came back in real time: automatically sync latest GitHub config.json
-          refreshConfig(isInitialAutoSync = true)
+          if ((hasObservedInitialNetworkState && !wasConnected) || hasPendingRemoteSync) {
+            // Internet is active/restored: silently auto-sync latest server data
+            refreshConfig(isSilentSync = true)
+          }
+        } else {
+          // Debounce briefly so Wi-Fi <-> Mobile Data handoff never triggers false pop-ups
+          disconnectDebounceJob?.cancel()
+          disconnectDebounceJob =
+            viewModelScope.launch {
+              delay(600L)
+              val stillOffline = !repository.isNetworkAvailable()
+              _uiState.update { current ->
+                current.copy(
+                  isNetworkConnected = !stillOffline,
+                  showOfflineDialog = stillOffline,
+                )
+              }
+            }
         }
         hasObservedInitialNetworkState = true
       }
     }
   }
 
-  fun reloadFromCache() {
+  fun onAppResumed() {
     currentConfig = repository.loadCachedConfig()
     favoriteIds = repository.getFavoriteIds()
     textSize = repository.getShayariTextSize()
@@ -156,23 +163,38 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     ) {
       selectedCategory = currentConfig.categories.firstOrNull() ?: "All"
     }
-    publishCurrentState(
-      isUsingCached = _uiState.value.isUsingCachedData,
-      syncMessage = null,
-    )
+    val onlineNow = repository.isNetworkAvailable()
+    _uiState.update {
+      it.copy(
+        isNetworkConnected = onlineNow,
+        showOfflineDialog = !onlineNow,
+      )
+    }
+    publishCurrentState(syncMessage = null)
+
+    if (onlineNow) {
+      refreshConfig(isSilentSync = true)
+    }
   }
 
   fun retryConnection() {
     val currentlyOnline = repository.isNetworkAvailable()
-    _uiState.update { it.copy(isNetworkConnected = currentlyOnline) }
-    refreshConfig(isInitialAutoSync = false)
+    _uiState.update {
+      it.copy(
+        isNetworkConnected = currentlyOnline,
+        showOfflineDialog = !currentlyOnline,
+      )
+    }
+    if (currentlyOnline) {
+      refreshConfig(isSilentSync = true)
+    }
   }
 
   fun dismissOfflineDialog() {
     _uiState.update { it.copy(showOfflineDialog = false) }
   }
 
-  fun refreshConfig(isInitialAutoSync: Boolean = false) {
+  fun refreshConfig(isSilentSync: Boolean = false) {
     if (_uiState.value.isRefreshing) return
     viewModelScope.launch {
       val currentlyOnline = repository.isNetworkAvailable()
@@ -180,13 +202,22 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         it.copy(
           isRefreshing = true,
           isNetworkConnected = currentlyOnline,
+          showOfflineDialog = !currentlyOnline,
           syncStatusMessage = null,
         )
+      }
+
+      if (!currentlyOnline) {
+        hasPendingRemoteSync = true
+        _uiState.update { it.copy(isRefreshing = false) }
+        return@launch
       }
 
       val result = repository.fetchRemoteConfig()
       result.fold(
         onSuccess = { remoteConfig ->
+          hasPendingRemoteSync = false
+          silentRetryJob?.cancel()
           currentConfig = remoteConfig
           if (
             !selectedCategory.equals("Popular", ignoreCase = true) &&
@@ -198,47 +229,48 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
           _uiState.update {
             it.copy(
               isNetworkConnected = true,
-              isServerUnreachable = false,
               showOfflineDialog = false,
             )
           }
           publishCurrentState(
-            isUsingCached = false,
-            syncMessage = if (isInitialAutoSync) null else "Synced latest Shayari",
+            syncMessage = if (isSilentSync) null else "नई शायरियाँ अपडेट हो गईं",
           )
         },
         onFailure = {
+          // Silent Fallback: if mobile internet is ON, NEVER show offline pop-up;
+          // keep showing cached/local data quietly and auto-retry in background.
           val onlineAfterAttempt = repository.isNetworkAvailable()
+          hasPendingRemoteSync = true
           _uiState.update {
             it.copy(
               isNetworkConnected = onlineAfterAttempt,
-              isServerUnreachable = true,
-              showOfflineDialog = true,
+              showOfflineDialog = !onlineAfterAttempt,
             )
           }
-          publishCurrentState(
-            isUsingCached = true,
-            syncMessage =
-              if (isInitialAutoSync) {
-                null
-              } else if (!onlineAfterAttempt) {
-                "Offline Mode: No Internet Connection"
-              } else {
-                "Server unreachable: showing saved Shayari"
-              },
-          )
+          publishCurrentState(syncMessage = null)
+          if (onlineAfterAttempt) {
+            scheduleSilentBackgroundRetry()
+          }
         },
       )
       _uiState.update { it.copy(isRefreshing = false) }
     }
   }
 
+  private fun scheduleSilentBackgroundRetry() {
+    if (silentRetryJob?.isActive == true) return
+    silentRetryJob =
+      viewModelScope.launch {
+        delay(15_000L)
+        if (hasPendingRemoteSync && repository.isNetworkAvailable() && !_uiState.value.isRefreshing) {
+          refreshConfig(isSilentSync = true)
+        }
+      }
+  }
+
   fun selectCategory(category: String) {
     selectedCategory = category
-    publishCurrentState(
-      isUsingCached = _uiState.value.isUsingCachedData,
-      syncMessage = null,
-    )
+    publishCurrentState(syncMessage = null)
   }
 
   fun selectTab(tab: MainTab) {
@@ -246,10 +278,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     if (tab == MainTab.FAVORITES) {
       selectedCategory = currentConfig.categories.firstOrNull() ?: "All"
     }
-    publishCurrentState(
-      isUsingCached = _uiState.value.isUsingCachedData,
-      syncMessage = null,
-    )
+    publishCurrentState(syncMessage = null)
   }
 
   fun toggleSearchVisibility() {
@@ -258,27 +287,18 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
       searchQuery = ""
     }
     _uiState.update { it.copy(isSearchVisible = nextVisible, searchQuery = searchQuery) }
-    publishCurrentState(
-      isUsingCached = _uiState.value.isUsingCachedData,
-      syncMessage = null,
-    )
+    publishCurrentState(syncMessage = null)
   }
 
   fun updateSearchQuery(query: String) {
     searchQuery = query
     _uiState.update { it.copy(searchQuery = query) }
-    publishCurrentState(
-      isUsingCached = _uiState.value.isUsingCachedData,
-      syncMessage = null,
-    )
+    publishCurrentState(syncMessage = null)
   }
 
   fun toggleFavorite(shayariId: Int) {
     favoriteIds = repository.toggleFavorite(shayariId)
-    publishCurrentState(
-      isUsingCached = _uiState.value.isUsingCachedData,
-      syncMessage = null,
-    )
+    publishCurrentState(syncMessage = null)
   }
 
   fun dismissUpdateDialog() {
@@ -290,10 +310,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     _uiState.update { it.copy(syncStatusMessage = null) }
   }
 
-  private fun publishCurrentState(
-    isUsingCached: Boolean,
-    syncMessage: String?,
-  ) {
+  private fun publishCurrentState(syncMessage: String?) {
     val screenState =
       if (currentConfig.maintenanceMode) {
         ShayariScreenState.Maintenance(
@@ -326,7 +343,6 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     _uiState.update { previous ->
       previous.copy(
         screenState = screenState,
-        isUsingCachedData = isUsingCached,
         lastSyncedAtMillis = repository.getLastSyncedTimeMillis(),
         textSize = textSize,
         searchQuery = searchQuery,

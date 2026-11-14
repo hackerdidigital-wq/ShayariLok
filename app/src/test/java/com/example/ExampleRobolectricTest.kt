@@ -10,6 +10,9 @@ import com.example.data.ShayariTextSize
 import com.example.model.ShayariConfig
 import com.example.ui.ShayariScreenState
 import com.example.ui.ShayariViewModel
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -74,7 +77,7 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `offline state triggers pop-up dialog and persistent banner while keeping cached shayari visible`() {
+  fun `offline state triggers clean dialog while keeping shayari state intact and retry retries cleanly`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
     val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     val shadowCm = Shadows.shadowOf(cm)
@@ -87,19 +90,31 @@ class ExampleRobolectricTest {
 
     assertFalse(initialState.isNetworkConnected)
     assertTrue(initialState.showOfflineDialog)
-    assertTrue(initialState.isOfflineBannerVisible)
     assertTrue(initialState.screenState is ShayariScreenState.Ready)
     assertEquals(5, (initialState.screenState as ShayariScreenState.Ready).visibleShayaris.size)
 
-    viewModel.dismissOfflineDialog()
-    val afterDismiss = viewModel.uiState.value
-    assertFalse(afterDismiss.showOfflineDialog)
-    assertTrue(afterDismiss.isOfflineBannerVisible)
-
     viewModel.retryConnection()
     val afterRetryOffline = viewModel.uiState.value
-    assertTrue(afterRetryOffline.isOfflineBannerVisible)
+    assertFalse(afterRetryOffline.isNetworkConnected)
+    assertTrue(afterRetryOffline.showOfflineDialog)
     assertTrue(afterRetryOffline.screenState is ShayariScreenState.Ready)
+  }
+
+  @Test
+  fun `silent fallback never shows no-internet dialog when device internet is active`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val shadowCm = Shadows.shadowOf(cm)
+    shadowCm.setDefaultNetworkActive(true)
+
+    val viewModel = ShayariViewModel(app)
+    val state = viewModel.uiState.value
+
+    if (ShayariRepository(app).isNetworkAvailable()) {
+      assertTrue(state.isNetworkConnected)
+      assertFalse(state.showOfflineDialog)
+    }
+    assertTrue(state.screenState is ShayariScreenState.Ready)
   }
 
   @Test
@@ -139,4 +154,107 @@ class ExampleRobolectricTest {
     repo.markNotificationsRead(config)
     assertFalse(repo.hasUnreadNotifications(config))
   }
+
+  @Test
+  fun `remote endpoints target live ShayariLok repo and append cache busters`() {
+    assertEquals(
+      "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok/main/config.json",
+      DefaultShayariData.DEFAULT_REMOTE_CONFIG_URL,
+    )
+    assertTrue(
+      DefaultShayariData.REMOTE_CONFIG_ENDPOINTS.contains(
+        "https://cdn.jsdelivr.net/gh/hackerdidigital-wq/ShayariLok@main/config.json"
+      )
+    )
+
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val repo = ShayariRepository(app)
+    assertEquals(
+      "https://example.com/config.json?t=12345",
+      repo.buildCacheBustedUrl("https://example.com/config.json", 12345L),
+    )
+    assertEquals(
+      "https://example.com/config.json?raw=1&t=12345",
+      repo.buildCacheBustedUrl("https://example.com/config.json?raw=1", 12345L),
+    )
+  }
+
+  @Test
+  fun `fetchRemoteConfig skips 404 endpoint and syncs new shayari category and notification live`() =
+    runTest {
+      val app = ApplicationProvider.getApplicationContext<Application>()
+      val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+      Shadows.shadowOf(cm).setDefaultNetworkActive(true)
+      val repo = ShayariRepository(app)
+      if (!repo.isNetworkAvailable()) return@runTest
+
+      val updatedJson =
+        """
+        {
+          "app_name": "Shayari Lok",
+          "latest_version_code": 2,
+          "force_update_url": "https://play.google.com/store/apps/details?id=com.cyberking.shayarilok",
+          "maintenance_mode": false,
+          "categories": ["All", "Love", "Dosti"],
+          "notifications": [
+            {
+              "id": 9,
+              "title": "दोस्ती स्पेशल",
+              "message": "नई दोस्ती शायरी लाइव हो गई है।",
+              "badge": "New",
+              "time_label": "Just Now"
+            }
+          ],
+          "shayari_list": [
+            {
+              "id": 99,
+              "category": "Dosti",
+              "text": "सच्चे दोस्त किस्मत से मिलते हैं।",
+              "author": "Shayari Lok"
+            }
+          ]
+        }
+        """.trimIndent()
+
+      val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+      var requestedQuery = ""
+      server.createContext("/missing.json") { exchange ->
+        exchange.sendResponseHeaders(404, -1)
+        exchange.close()
+      }
+      server.createContext("/live/config.json") { exchange ->
+        requestedQuery = exchange.requestURI.query ?: ""
+        val bytes = updatedJson.toByteArray(Charsets.UTF_8)
+        exchange.responseHeaders.add("Content-Type", "application/json; charset=utf-8")
+        exchange.sendResponseHeaders(200, bytes.size.toLong())
+        exchange.responseBody.use { it.write(bytes) }
+      }
+      server.start()
+
+      try {
+        val port = server.address.port
+        val result =
+          repo.fetchRemoteConfig(
+            endpoints =
+              listOf(
+                "http://127.0.0.1:$port/missing.json",
+                "http://127.0.0.1:$port/live/config.json",
+              )
+          )
+
+        assertTrue(result.isSuccess)
+        assertTrue(requestedQuery.startsWith("t="))
+        val synced = result.getOrThrow()
+        assertEquals(2, synced.latestVersionCode)
+        assertEquals(listOf("All", "Love", "Dosti"), synced.categories)
+        assertEquals(1, synced.shayariList.size)
+        assertEquals(99, synced.shayariList.first().id)
+        assertEquals("Dosti", synced.shayariList.first().category)
+        assertTrue(repo.hasUnreadNotifications(synced))
+        assertTrue(repo.hasCachedRemoteConfig())
+        assertTrue(repo.getLastSyncedTimeMillis() > 0L)
+      } finally {
+        server.stop(0)
+      }
+    }
 }
