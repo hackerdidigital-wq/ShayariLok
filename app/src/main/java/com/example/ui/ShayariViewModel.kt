@@ -70,6 +70,8 @@ sealed interface ShayariScreenState {
 
 data class ShayariUiState(
   val screenState: ShayariScreenState = ShayariScreenState.Loading,
+  val isSplashVisible: Boolean = true,
+  val splashAppName: String = "Shayari Lok",
   val isRefreshing: Boolean = false,
   val isNetworkConnected: Boolean = true,
   val showOfflineDialog: Boolean = false,
@@ -108,11 +110,20 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
       it.copy(
         isNetworkConnected = initialOnline,
         showOfflineDialog = !initialOnline,
+        splashAppName = currentConfig.appName,
       )
     }
     publishCurrentState(syncMessage = null)
     observeConnectivity()
     refreshConfig(isSilentSync = true)
+    viewModelScope.launch {
+      delay(1150L)
+      val waitStart = System.currentTimeMillis()
+      while (_uiState.value.isRefreshing && System.currentTimeMillis() - waitStart < 650L) {
+        delay(80L)
+      }
+      _uiState.update { it.copy(isSplashVisible = false) }
+    }
   }
 
   private fun observeConnectivity() {
@@ -343,6 +354,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     _uiState.update { previous ->
       previous.copy(
         screenState = screenState,
+        splashAppName = currentConfig.appName,
         lastSyncedAtMillis = repository.getLastSyncedTimeMillis(),
         textSize = textSize,
         searchQuery = searchQuery,

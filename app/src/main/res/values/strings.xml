@@ -11,7 +11,9 @@
     <string name="cd_notifications">Notifications</string>
     <string name="cd_refresh">Refresh Shayari</string>
     <string name="cd_back">Back</string>
-    <string name="copied_snackbar">Shayari copied to clipboard</string>
+    <string name="copied_snackbar">Shayari Copied Successfully!</string>
+    <string name="brand_tagline">Apki Har Bhavna Ka Saathi</string>
+    <string name="splash_loading_subtitle">ताज़ा शायरियाँ लोड हो रही हैं...</string>
     <string name="settings_title">Settings &amp; Info</string>
     <string name="notifications_title">Updates &amp; Alerts</string>
     <string name="privacy_policy_title">Privacy Policy</string>

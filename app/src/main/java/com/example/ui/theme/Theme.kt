@@ -59,7 +59,7 @@ private val LightColorScheme =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShayariLokTheme(
-  darkTheme: Boolean = false,
+  darkTheme: Boolean = true,
   content: @Composable () -> Unit,
 ) {
   val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme

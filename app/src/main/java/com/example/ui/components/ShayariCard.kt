@@ -1,17 +1,27 @@
 package com.example.ui.components
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -23,6 +33,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
@@ -33,21 +44,27 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.ShayariTextSize
+import com.example.data.rememberShayariImageBitmap
 import com.example.model.ShayariItem
 import com.example.ui.theme.CrownGold
 import com.example.ui.theme.NeonPink
+import com.example.ui.theme.NeonPurple
+import com.example.ui.theme.NeonVioletGlow
 import kotlinx.coroutines.delay
 
 @Composable
@@ -62,6 +79,19 @@ fun ShayariCard(
 ) {
   var justCopied by remember(item.id) { mutableStateOf(false) }
 
+  // Smooth entrance animation per card
+  val entranceAlpha = remember(item.id) { Animatable(0f) }
+  val entranceOffsetY = remember(item.id) { Animatable(18f) }
+  LaunchedEffect(item.id) {
+    entranceAlpha.animateTo(1f, tween(durationMillis = 280, easing = FastOutSlowInEasing))
+  }
+  LaunchedEffect(item.id) {
+    entranceOffsetY.animateTo(
+      0f,
+      spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+    )
+  }
+
   LaunchedEffect(justCopied) {
     if (justCopied) {
       delay(1600)
@@ -69,14 +99,25 @@ fun ShayariCard(
     }
   }
 
+  // Heart burst spring VFX when favoriting
+  val heartScale by
+    animateFloatAsState(
+      targetValue = if (isFavorite) 1.18f else 1f,
+      animationSpec =
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+      label = "heartBurst",
+    )
+
   val heartColor by
     animateColorAsState(
-      targetValue = if (isFavorite) NeonPink else Color.White.copy(alpha = 0.92f),
+      targetValue = if (isFavorite) NeonPink else Color.White.copy(alpha = 0.90f),
       animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
       label = "favoriteColor",
     )
 
-  val backdropRes =
+  val remoteOrGalleryBitmap = rememberShayariImageBitmap(item.imageUrl)
+
+  val fallbackBackdropRes =
     remember(item.id, item.category) {
       when {
         item.category.equals("Sad", ignoreCase = true) -> R.drawable.img_card_silhouette
@@ -89,91 +130,179 @@ fun ShayariCard(
       }
     }
 
-  val cardShape = RoundedCornerShape(16.dp)
+  val cardShape = RoundedCornerShape(18.dp)
 
   ElevatedCard(
     shape = cardShape,
-    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 4.dp),
-    colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF100C18)),
-    modifier = modifier.fillMaxWidth().testTag("shayari_card_${item.id}"),
+    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp),
+    colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF130826)),
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .graphicsLayer {
+          alpha = entranceAlpha.value
+          translationY = entranceOffsetY.value
+        }
+        .border(
+          width = 1.dp,
+          brush =
+            Brush.linearGradient(
+              colors =
+                listOf(
+                  NeonVioletGlow.copy(alpha = 0.45f),
+                  NeonPink.copy(alpha = 0.25f),
+                  CrownGold.copy(alpha = 0.28f),
+                )
+            ),
+          shape = cardShape,
+        )
+        .testTag("shayari_card_${item.id}"),
   ) {
-    Box(modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp)) {
-      Image(
-        painter = painterResource(id = backdropRes),
-        contentDescription = null,
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.matchParentSize(),
-      )
-
-      // Smooth left-to-right gradient scrim matching the reference card layout
+    Row(
+      modifier =
+        Modifier.fillMaxWidth()
+          .height(IntrinsicSize.Min)
+          .heightIn(min = 156.dp)
+          .background(
+            Brush.horizontalGradient(
+              colors =
+                listOf(
+                  Color(0xFF1A0936),
+                  Color(0xFF120724),
+                  Color(0xFF0E061B),
+                )
+            )
+          )
+          .padding(10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      // Side Image Thumbnail (Admin-uploaded Gallery Photo / Remote Image or Poster Artwork)
       Box(
         modifier =
-          Modifier.matchParentSize()
-            .background(
-              Brush.horizontalGradient(
-                0.0f to Color(0x140A0810),
-                0.35f to Color(0x880A0810),
-                0.62f to Color(0xDC0A0810),
-                1.0f to Color(0xF20A0810),
-              )
+          Modifier.width(110.dp)
+            .fillMaxHeight()
+            .heightIn(min = 136.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .border(
+              width = 1.dp,
+              brush =
+                Brush.verticalGradient(
+                  colors = listOf(CrownGold.copy(alpha = 0.55f), NeonPink.copy(alpha = 0.45f))
+                ),
+              shape = RoundedCornerShape(14.dp),
             )
-      )
-
-      Column(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp).padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
+            .testTag("shayari_thumbnail_${item.id}")
       ) {
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Right-aligned crisp Hindi/Hinglish Shayari text
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Spacer(modifier = Modifier.weight(0.30f))
-          Text(
-            text = item.text,
-            style =
-              MaterialTheme.typography.bodyLarge.copy(
-                fontSize = textSize.fontSizeSp.sp,
-                lineHeight = textSize.lineHeightSp.sp,
-                fontWeight = FontWeight.Medium,
-              ),
-            color = Color.White,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.weight(0.70f),
-          )
+        Crossfade(
+          targetState = remoteOrGalleryBitmap,
+          animationSpec = tween(durationMillis = 320),
+          label = "thumbnailCrossfade",
+        ) { loadedBitmap ->
+          if (loadedBitmap != null) {
+            Image(
+              bitmap = loadedBitmap,
+              contentDescription = item.category,
+              contentScale = ContentScale.Crop,
+              modifier = Modifier.fillMaxSize(),
+            )
+          } else {
+            Image(
+              painter = painterResource(id = fallbackBackdropRes),
+              contentDescription = item.category,
+              contentScale = ContentScale.Crop,
+              modifier = Modifier.fillMaxSize(),
+            )
+          }
         }
 
-        // Bottom-right clean realistic icon actions (no blue tap flash, >=48dp touch target)
+        // Smooth edge blend gradient so thumbnail integrates into the dark velvet card
+        Box(
+          modifier =
+            Modifier.matchParentSize()
+              .background(
+                Brush.horizontalGradient(
+                  0.0f to Color.Transparent,
+                  0.68f to Color(0x180E061B),
+                  1.0f to Color(0x880E061B),
+                )
+              )
+        )
+      }
+
+      Spacer(modifier = Modifier.width(12.dp))
+
+      // Right Content Column: Category Badge + Shayari Text + Smart Copy/Share/Favorite Bar
+      Column(
+        modifier = Modifier.weight(1f).fillMaxHeight(),
+        verticalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Surface(
+            shape = RoundedCornerShape(50),
+            color = NeonPurple.copy(alpha = 0.28f),
+            border = BorderStroke(0.8.dp, NeonVioletGlow.copy(alpha = 0.5f)),
+          ) {
+            Text(
+              text = item.category,
+              style = MaterialTheme.typography.labelSmall,
+              fontWeight = FontWeight.SemiBold,
+              color = Color(0xFFEBD8FF),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+            )
+          }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+          text = item.text,
+          style =
+            MaterialTheme.typography.bodyLarge.copy(
+              fontSize = textSize.fontSizeSp.sp,
+              lineHeight = textSize.lineHeightSp.sp,
+              fontWeight = FontWeight.Medium,
+            ),
+          color = Color.White,
+          textAlign = TextAlign.Start,
+          modifier = Modifier.fillMaxWidth().padding(end = 2.dp),
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Smart Copy Button + Share + Heart Action Row
         Row(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.End,
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          CardIconAction(
-            iconRes = if (justCopied) R.drawable.ic_check else R.drawable.ic_copy,
-            contentDescription = stringResource(R.string.action_copy),
-            tint = if (justCopied) CrownGold else Color.White.copy(alpha = 0.88f),
+          SmartCopyPillButton(
+            justCopied = justCopied,
             testTag = "copy_button_${item.id}",
             onClick = {
               justCopied = true
               onCopyClick(item)
             },
           )
-          Spacer(modifier = Modifier.width(4.dp))
+          Spacer(modifier = Modifier.width(2.dp))
           CardIconAction(
             iconRes = R.drawable.ic_share,
             contentDescription = stringResource(R.string.action_share),
             tint = Color.White.copy(alpha = 0.88f),
+            iconScale = 1f,
             testTag = "share_button_${item.id}",
             onClick = { onShareClick(item) },
           )
-          Spacer(modifier = Modifier.width(4.dp))
           CardIconAction(
             iconRes = if (isFavorite) R.drawable.ic_heart_filled else R.drawable.ic_heart,
             contentDescription = stringResource(R.string.action_favorite),
             tint = heartColor,
+            iconScale = heartScale,
             testTag = "favorite_button_${item.id}",
             onClick = { onFavoriteToggle(item.id) },
           )
@@ -184,10 +313,85 @@ fun ShayariCard(
 }
 
 @Composable
+private fun SmartCopyPillButton(
+  justCopied: Boolean,
+  testTag: String,
+  onClick: () -> Unit,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val containerColor by
+    animateColorAsState(
+      targetValue =
+        if (justCopied) CrownGold.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.10f),
+      animationSpec = tween(durationMillis = 200),
+      label = "copyBg",
+    )
+  val contentColor by
+    animateColorAsState(
+      targetValue = if (justCopied) CrownGold else Color(0xFFF3EAFF),
+      animationSpec = tween(durationMillis = 200),
+      label = "copyTint",
+    )
+  val scale by
+    animateFloatAsState(
+      targetValue = if (justCopied) 1.05f else 1f,
+      animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+      label = "copyScale",
+    )
+
+  Box(
+    contentAlignment = Alignment.Center,
+    modifier =
+      Modifier.minimumInteractiveComponentSize()
+        .graphicsLayer {
+          scaleX = scale
+          scaleY = scale
+        }
+        .clickable(
+          interactionSource = interactionSource,
+          indication = null,
+          onClick = onClick,
+        )
+        .testTag(testTag),
+  ) {
+    Surface(
+      shape = RoundedCornerShape(50),
+      color = containerColor,
+      border =
+        BorderStroke(
+          width = 0.9.dp,
+          color = if (justCopied) CrownGold.copy(alpha = 0.7f) else NeonVioletGlow.copy(alpha = 0.45f),
+        ),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+      ) {
+        Icon(
+          painter = painterResource(id = if (justCopied) R.drawable.ic_check else R.drawable.ic_copy),
+          contentDescription = stringResource(R.string.action_copy),
+          tint = contentColor,
+          modifier = Modifier.size(14.dp),
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Text(
+          text =
+            stringResource(if (justCopied) R.string.action_copied else R.string.action_copy),
+          style = MaterialTheme.typography.labelSmall,
+          fontWeight = FontWeight.SemiBold,
+          color = contentColor,
+        )
+      }
+    }
+  }
+}
+
+@Composable
 private fun CardIconAction(
   iconRes: Int,
   contentDescription: String,
   tint: Color,
+  iconScale: Float,
   testTag: String,
   onClick: () -> Unit,
 ) {
@@ -208,7 +412,11 @@ private fun CardIconAction(
       painter = painterResource(id = iconRes),
       contentDescription = contentDescription,
       tint = tint,
-      modifier = Modifier.size(21.dp),
+      modifier =
+        Modifier.size(21.dp).graphicsLayer {
+          scaleX = iconScale
+          scaleY = iconScale
+        },
     )
   }
 }

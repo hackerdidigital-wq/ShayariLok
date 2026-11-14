@@ -54,7 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.ShayariRepository
 import com.example.data.ShayariTextSize
-import com.example.ui.theme.LightBackgroundBottom
+import com.example.ui.theme.DarkBackgroundBottom
 import com.example.ui.theme.ShayariLokTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -93,7 +93,7 @@ private fun SettingsContent(
 
   val bgGradient =
     Brush.verticalGradient(
-      colors = listOf(MaterialTheme.colorScheme.background, LightBackgroundBottom)
+      colors = listOf(MaterialTheme.colorScheme.background, DarkBackgroundBottom)
     )
 
   val formattedSyncTime =

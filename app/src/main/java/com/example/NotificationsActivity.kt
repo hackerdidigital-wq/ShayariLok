@@ -109,7 +109,7 @@ private fun NotificationsContent(
       colors =
         listOf(
           MaterialTheme.colorScheme.background,
-          LightBackgroundBottom,
+          DarkBackgroundBottom,
         )
     )
 

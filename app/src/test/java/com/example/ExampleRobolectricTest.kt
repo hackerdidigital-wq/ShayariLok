@@ -288,4 +288,30 @@ class ExampleRobolectricTest {
         server.stop(0)
       }
     }
+
+  @Test
+  fun `shayari item parses admin gallery base64 and url thumbnail fields cleanly`() {
+    val jsonWithImageUrl =
+      org.json.JSONObject(
+        """{"id":10,"category":"Love","text":"Dil ki baat","image_url":"https://example.com/photo.jpg"}"""
+      )
+    val itemUrl = com.example.model.ShayariItem.fromJson(jsonWithImageUrl)!!
+    assertEquals("https://example.com/photo.jpg", itemUrl.imageUrl)
+
+    val jsonWithGalleryBase64 =
+      org.json.JSONObject(
+        """{"id":11,"category":"Sad","text":"Yaadein","thumbnail":"data:image/png;base64,iVBORw0KGgo="}"""
+      )
+    val itemBase64 = com.example.model.ShayariItem.fromJson(jsonWithGalleryBase64)!!
+    assertEquals("data:image/png;base64,iVBORw0KGgo=", itemBase64.imageUrl)
+  }
+
+  @Test
+  fun `copied snackbar message and initial splash state are configured`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    assertEquals("Shayari Copied Successfully!", app.getString(R.string.copied_snackbar))
+
+    val viewModel = ShayariViewModel(app)
+    assertTrue(viewModel.uiState.value.isSplashVisible)
+  }
 }

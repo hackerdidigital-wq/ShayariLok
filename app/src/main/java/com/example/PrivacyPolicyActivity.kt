@@ -74,7 +74,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
       colors =
         listOf(
           MaterialTheme.colorScheme.background,
-          LightBackgroundBottom,
+          DarkBackgroundBottom,
         )
     )
 

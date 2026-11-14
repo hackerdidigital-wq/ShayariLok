@@ -15,6 +15,7 @@ data class ShayariItem(
   val category: String,
   val text: String,
   val author: String = "",
+  val imageUrl: String = "",
 ) {
   fun toJson(): JSONObject =
     JSONObject().apply {
@@ -24,21 +25,32 @@ data class ShayariItem(
       if (author.isNotBlank()) {
         put("author", author)
       }
+      if (imageUrl.isNotBlank()) {
+        put("image_url", imageUrl)
+      }
     }
 
   companion object {
+    private val IMAGE_KEYS =
+      listOf("image_url", "image", "photo_url", "photo", "thumbnail", "thumbnail_url", "img")
+
     fun fromJson(json: JSONObject, fallbackId: Int = -1): ShayariItem? {
       val rawId = json.optFlexibleInt("id", fallbackId)
       val parsedId = if (rawId >= 0) rawId else fallbackId.coerceAtLeast(1)
       val category = json.optCleanString("category").ifEmpty { "All" }
       val text = json.optCleanString("text")
       val author = json.optCleanString("author")
+      val imageUrl =
+        IMAGE_KEYS.firstNotNullOfOrNull { key ->
+          json.optCleanString(key).takeIf { it.isNotEmpty() }
+        } ?: ""
       if (text.isEmpty()) return null
       return ShayariItem(
         id = parsedId,
         category = category,
         text = text,
         author = author,
+        imageUrl = imageUrl,
       )
     }
   }

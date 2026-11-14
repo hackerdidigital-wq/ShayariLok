@@ -2,6 +2,19 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.EaseInOutSine
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -45,6 +58,7 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -59,8 +73,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -78,8 +94,16 @@ import com.example.ui.ShayariScreenState
 import com.example.ui.components.ShayariCard
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.CrownGold
+import com.example.ui.theme.DeepRoyalPurple
 import com.example.ui.theme.HeaderPurpleEnd
 import com.example.ui.theme.HeaderPurpleStart
+import com.example.ui.theme.MidnightIndigo
+import com.example.ui.theme.NeonPink
+import com.example.ui.theme.NeonPurple
+import com.example.ui.theme.NeonVioletGlow
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -115,20 +139,99 @@ fun HomeScreen(
     onSelectTab(MainTab.EXPLORE)
   }
 
+  val ambientVfx = rememberInfiniteTransition(label = "homeAmbientVfx")
+  val driftPhase by
+    ambientVfx.animateFloat(
+      initialValue = 0f,
+      targetValue = 1f,
+      animationSpec =
+        infiniteRepeatable(
+          animation = tween(durationMillis = 7000, easing = LinearEasing),
+          repeatMode = RepeatMode.Restart,
+        ),
+      label = "driftPhase",
+    )
+  val crownGlowAlpha by
+    ambientVfx.animateFloat(
+      initialValue = 0.20f,
+      targetValue = 0.45f,
+      animationSpec =
+        infiniteRepeatable(
+          animation = tween(durationMillis = 1500, easing = EaseInOutSine),
+          repeatMode = RepeatMode.Reverse,
+        ),
+      label = "crownGlowAlpha",
+    )
+
   BoxWithConstraints(
-    modifier = Modifier.fillMaxSize().background(Color(0xFFF6F4FA))
+    modifier =
+      Modifier.fillMaxSize()
+        .background(
+          Brush.verticalGradient(
+            colors = listOf(DeepRoyalPurple, MidnightIndigo, Color(0xFF120624))
+          )
+        )
   ) {
+    // Subtle animated poster bokeh aura behind the feed
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      val phaseAngle = driftPhase * 2f * PI.toFloat()
+      val glowShiftX = cos(phaseAngle) * 28f
+      val glowShiftY = sin(phaseAngle) * 24f
+      drawCircle(
+        brush =
+          Brush.radialGradient(
+            colors = listOf(NeonPink.copy(alpha = 0.14f), Color.Transparent),
+            center = Offset(size.width * 0.85f + glowShiftX, size.height * 0.30f + glowShiftY),
+            radius = size.minDimension * 0.55f,
+          ),
+        center = Offset(size.width * 0.85f + glowShiftX, size.height * 0.30f + glowShiftY),
+        radius = size.minDimension * 0.55f,
+      )
+      drawCircle(
+        brush =
+          Brush.radialGradient(
+            colors = listOf(NeonPurple.copy(alpha = 0.22f), Color.Transparent),
+            center = Offset(size.width * 0.18f - glowShiftX, size.height * 0.72f - glowShiftY),
+            radius = size.minDimension * 0.65f,
+          ),
+        center = Offset(size.width * 0.18f - glowShiftX, size.height * 0.72f - glowShiftY),
+        radius = size.minDimension * 0.65f,
+      )
+    }
+
     val isExpandedWidth = maxWidth >= 600.dp
     val gridColumns = if (maxWidth >= 840.dp) 2 else 1
 
     Scaffold(
-      containerColor = Color(0xFFF6F4FA),
+      containerColor = Color.Transparent,
       contentWindowInsets = WindowInsets(0, 0, 0, 0),
       snackbarHost = {
         SnackbarHost(
           hostState = snackbarHostState,
-          modifier = Modifier.navigationBarsPadding(),
-        )
+          modifier = Modifier.navigationBarsPadding().padding(horizontal = 14.dp, vertical = 6.dp),
+        ) { data ->
+          Snackbar(
+            shape = RoundedCornerShape(14.dp),
+            containerColor = Color(0xFF2E0D63),
+            contentColor = Color.White,
+            modifier = Modifier.padding(bottom = 4.dp),
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_check),
+                contentDescription = null,
+                tint = CrownGold,
+                modifier = Modifier.size(18.dp),
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = data.visuals.message,
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White,
+              )
+            }
+          }
+        }
       },
       topBar = {
         Column(
@@ -229,12 +332,25 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
               ) {
-                Icon(
-                  painter = painterResource(id = R.drawable.ic_crown),
-                  contentDescription = null,
-                  tint = Color.Unspecified,
-                  modifier = Modifier.size(26.dp),
-                )
+                Box(contentAlignment = Alignment.Center) {
+                  Box(
+                    modifier =
+                      Modifier.size(34.dp)
+                        .background(
+                          Brush.radialGradient(
+                            colors =
+                              listOf(CrownGold.copy(alpha = crownGlowAlpha), Color.Transparent)
+                          ),
+                          CircleShape,
+                        )
+                  )
+                  Icon(
+                    painter = painterResource(id = R.drawable.ic_crown),
+                    contentDescription = null,
+                    tint = Color.Unspecified,
+                    modifier = Modifier.size(26.dp),
+                  )
+                }
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                   text = "Live ",
@@ -407,12 +523,40 @@ fun HomeScreen(
               items(readyState.config.categories, key = { it }) { category ->
                 val isSelected = category.equals(readyState.selectedCategory, ignoreCase = true)
                 val chipInteraction = remember { MutableInteractionSource() }
+                val chipBg by
+                  animateColorAsState(
+                    targetValue = if (isSelected) BadgePurple else Color(0xFFF3EEFF),
+                    animationSpec = tween(durationMillis = 200),
+                    label = "chipBg",
+                  )
+                val chipTextColor by
+                  animateColorAsState(
+                    targetValue = if (isSelected) Color.White else Color(0xFF2F145E),
+                    animationSpec = tween(durationMillis = 200),
+                    label = "chipTextColor",
+                  )
+                val chipScale by
+                  animateFloatAsState(
+                    targetValue = if (isSelected) 1.04f else 1f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                    label = "chipScale",
+                  )
                 Surface(
                   shape = RoundedCornerShape(50),
-                  color = if (isSelected) BadgePurple else Color(0xFFEDEAF4),
-                  shadowElevation = if (isSelected) 3.dp else 0.dp,
+                  color = chipBg,
+                  border =
+                    if (isSelected) {
+                      BorderStroke(1.2.dp, NeonVioletGlow.copy(alpha = 0.85f))
+                    } else {
+                      BorderStroke(0.8.dp, Color.White.copy(alpha = 0.35f))
+                    },
+                  shadowElevation = if (isSelected) 6.dp else 1.dp,
                   modifier =
-                    Modifier.clip(RoundedCornerShape(50))
+                    Modifier.graphicsLayer {
+                        scaleX = chipScale
+                        scaleY = chipScale
+                      }
+                      .clip(RoundedCornerShape(50))
                       .clickable(
                         interactionSource = chipInteraction,
                         indication = null,
@@ -428,8 +572,8 @@ fun HomeScreen(
                     Text(
                       text = category,
                       style = MaterialTheme.typography.labelLarge,
-                      fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                      color = if (isSelected) Color.White else Color(0xFF3E3552),
+                      fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                      color = chipTextColor,
                     )
                   }
                 }
@@ -470,6 +614,7 @@ fun HomeScreen(
                     onCopyClick = onCopyShayari,
                     onShareClick = onShareShayari,
                     onFavoriteToggle = onFavoriteToggle,
+                    modifier = Modifier.animateItem(),
                   )
                 }
               }
@@ -490,6 +635,7 @@ fun HomeScreen(
                     onCopyClick = onCopyShayari,
                     onShareClick = onShareShayari,
                     onFavoriteToggle = onFavoriteToggle,
+                    modifier = Modifier.animateItem(),
                   )
                 }
                 item { Spacer(modifier = Modifier.height(10.dp)) }
@@ -673,7 +819,8 @@ private fun EmptyShayariState(
   ) {
     Surface(
       shape = CircleShape,
-      color = Color(0xFFEDE4FA),
+      color = NeonPurple.copy(alpha = 0.25f),
+      border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.45f)),
       modifier = Modifier.size(64.dp),
     ) {
       Box(contentAlignment = Alignment.Center) {
@@ -683,7 +830,7 @@ private fun EmptyShayariState(
               id = if (isFavoritesTab) R.drawable.ic_heart_filled else R.drawable.ic_category
             ),
           contentDescription = null,
-          tint = BadgePurple,
+          tint = CrownGold,
           modifier = Modifier.size(28.dp),
         )
       }
@@ -695,7 +842,7 @@ private fun EmptyShayariState(
           if (isFavoritesTab) R.string.empty_favorites_title else R.string.empty_category_title
         ),
       style = MaterialTheme.typography.titleLarge,
-      color = Color(0xFF1D0D36),
+      color = Color.White,
       textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(6.dp))
@@ -709,7 +856,7 @@ private fun EmptyShayariState(
           }
         ),
       style = MaterialTheme.typography.bodyMedium,
-      color = Color(0xFF6B6280),
+      color = Color(0xFFD2C4EB),
       textAlign = TextAlign.Center,
       modifier = Modifier.widthIn(max = 300.dp),
     )
