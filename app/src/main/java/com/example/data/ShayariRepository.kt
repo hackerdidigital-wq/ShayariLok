@@ -3,6 +3,7 @@ package com.example.data
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import com.example.model.ShayariConfig
 import java.io.BufferedReader
@@ -10,6 +11,10 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 
 enum class ShayariTextSize(val label: String, val fontSizeSp: Int, val lineHeightSp: Int) {
@@ -20,9 +25,8 @@ enum class ShayariTextSize(val label: String, val fontSizeSp: Int, val lineHeigh
 
 /**
  * Ultra-lightweight data repository using pure Android HttpURLConnection,
- * org.json, and SharedPreferences for offline caching, reading preferences, and favorites.
- *
- * Remote GitHub Raw config.json URLs are kept strictly internal and never exposed in UI.
+ * org.json, ConnectivityManager, and SharedPreferences for live sync, real-time network
+ * monitoring, offline caching, reading preferences, and favorites.
  */
 class ShayariRepository(context: Context) {
 
@@ -90,7 +94,7 @@ class ShayariRepository(context: Context) {
   suspend fun fetchRemoteConfig(): Result<ShayariConfig> =
     withContext(Dispatchers.IO) {
       if (!isNetworkAvailable()) {
-        return@withContext Result.failure(IllegalStateException("Offline mode active"))
+        return@withContext Result.failure(IllegalStateException("Offline Mode: No Internet Connection"))
       }
 
       var lastError: Exception? = null
@@ -109,7 +113,7 @@ class ShayariRepository(context: Context) {
         }
       }
 
-      Result.failure(lastError ?: IllegalStateException("Unable to fetch remote config.json"))
+      Result.failure(lastError ?: IllegalStateException("Unable to reach server config.json"))
     }
 
   private fun fetchJsonFromUrl(endpoint: String): String {
@@ -142,7 +146,7 @@ class ShayariRepository(context: Context) {
     }
   }
 
-  private fun isNetworkAvailable(): Boolean {
+  fun isNetworkAvailable(): Boolean {
     val connectivityManager =
       appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
         ?: return false
@@ -150,6 +154,65 @@ class ShayariRepository(context: Context) {
     val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
     return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
   }
+
+  /**
+   * Emits real-time internet connectivity changes using Android's native
+   * ConnectivityManager.NetworkCallback (API 24+).
+   */
+  fun observeNetworkConnectivity(): Flow<Boolean> =
+    callbackFlow {
+      trySend(isNetworkAvailable())
+
+      val connectivityManager =
+        appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+      if (connectivityManager == null) {
+        awaitClose {}
+        return@callbackFlow
+      }
+
+      val callback =
+        object : ConnectivityManager.NetworkCallback() {
+          override fun onAvailable(network: Network) {
+            trySend(isNetworkAvailable())
+          }
+
+          override fun onLost(network: Network) {
+            trySend(isNetworkAvailable())
+          }
+
+          override fun onUnavailable() {
+            trySend(false)
+          }
+
+          override fun onCapabilitiesChanged(
+            network: Network,
+            networkCapabilities: NetworkCapabilities,
+          ) {
+            trySend(
+              networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
+                isNetworkAvailable()
+            )
+          }
+        }
+
+      val registered =
+        try {
+          connectivityManager.registerDefaultNetworkCallback(callback)
+          true
+        } catch (_: Exception) {
+          false
+        }
+
+      awaitClose {
+        if (registered) {
+          try {
+            connectivityManager.unregisterNetworkCallback(callback)
+          } catch (_: Exception) {
+            // Ignore if already unregistered
+          }
+        }
+      }
+    }.distinctUntilChanged()
 
   companion object {
     private const val PREFS_NAME = "shayari_lok_prefs"

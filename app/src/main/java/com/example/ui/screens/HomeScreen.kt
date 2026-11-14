@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -64,6 +65,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
@@ -82,6 +84,8 @@ fun HomeScreen(
   readyState: ShayariScreenState.Ready,
   textSize: ShayariTextSize,
   isRefreshing: Boolean,
+  isOffline: Boolean,
+  isNetworkConnected: Boolean,
   isSearchVisible: Boolean,
   unreadNotificationCount: Int,
   snackbarHostState: SnackbarHostState,
@@ -90,6 +94,7 @@ fun HomeScreen(
   onToggleSearch: () -> Unit,
   onSearchQueryChange: (String) -> Unit,
   onRefreshClick: () -> Unit,
+  onRetryConnection: () -> Unit,
   onNotificationsClick: () -> Unit,
   onSettingsClick: () -> Unit,
   onShareAppClick: () -> Unit,
@@ -393,6 +398,15 @@ fun HomeScreen(
           modifier = Modifier.fillMaxSize(),
           horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+          AnimatedVisibility(visible = isOffline) {
+            OfflineStatusBanner(
+              isNetworkConnected = isNetworkConnected,
+              isRefreshing = isRefreshing,
+              onRetryClick = onRetryConnection,
+              modifier = Modifier.widthIn(max = 960.dp).fillMaxWidth(),
+            )
+          }
+
           if (readyState.activeTab == MainTab.EXPLORE) {
             LazyRow(
               contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
@@ -693,5 +707,75 @@ private fun EmptyShayariState(
       textAlign = TextAlign.Center,
       modifier = Modifier.widthIn(max = 300.dp),
     )
+  }
+}
+
+@Composable
+private fun OfflineStatusBanner(
+  isNetworkConnected: Boolean,
+  isRefreshing: Boolean,
+  onRetryClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  Surface(
+    color = Color(0xFFFFF1F2),
+    border = BorderStroke(1.dp, Color(0xFFFDA4AF)),
+    shape = RoundedCornerShape(14.dp),
+    modifier = modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp).testTag("offline_status_banner"),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.weight(1f).padding(end = 8.dp),
+      ) {
+        Icon(
+          painter = painterResource(id = R.drawable.ic_wifi_off),
+          contentDescription = null,
+          tint = Color(0xFFBE123C),
+          modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+          text =
+            stringResource(
+              if (isNetworkConnected) {
+                R.string.offline_server_banner_text
+              } else {
+                R.string.offline_banner_text
+              }
+            ),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.SemiBold,
+          color = Color(0xFF881337),
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+
+      Surface(
+        shape = RoundedCornerShape(50),
+        color = Color(0xFFBE123C),
+        modifier =
+          Modifier.clip(RoundedCornerShape(50))
+            .clickable(
+              enabled = !isRefreshing,
+              onClick = onRetryClick,
+            )
+            .minimumInteractiveComponentSize()
+            .testTag("offline_banner_retry_button"),
+      ) {
+        Text(
+          text = if (isRefreshing) "..." else stringResource(R.string.action_retry),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.Bold,
+          color = Color.White,
+          modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+        )
+      }
+    }
   }
 }

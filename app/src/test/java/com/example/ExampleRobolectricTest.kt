@@ -2,6 +2,7 @@ package com.example
 
 import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.DefaultShayariData
 import com.example.data.ShayariRepository
@@ -15,6 +16,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -69,6 +71,35 @@ class ExampleRobolectricTest {
     assertTrue(maintenance.message.contains("हम ऐप को और बेहतर बना रहे हैं"))
 
     prefs.edit().clear().commit()
+  }
+
+  @Test
+  fun `offline state triggers pop-up dialog and persistent banner while keeping cached shayari visible`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val shadowCm = Shadows.shadowOf(cm)
+    shadowCm.setDefaultNetworkActive(false)
+    @Suppress("DEPRECATION")
+    shadowCm.setActiveNetworkInfo(null)
+
+    val viewModel = ShayariViewModel(app)
+    val initialState = viewModel.uiState.value
+
+    assertFalse(initialState.isNetworkConnected)
+    assertTrue(initialState.showOfflineDialog)
+    assertTrue(initialState.isOfflineBannerVisible)
+    assertTrue(initialState.screenState is ShayariScreenState.Ready)
+    assertEquals(5, (initialState.screenState as ShayariScreenState.Ready).visibleShayaris.size)
+
+    viewModel.dismissOfflineDialog()
+    val afterDismiss = viewModel.uiState.value
+    assertFalse(afterDismiss.showOfflineDialog)
+    assertTrue(afterDismiss.isOfflineBannerVisible)
+
+    viewModel.retryConnection()
+    val afterRetryOffline = viewModel.uiState.value
+    assertTrue(afterRetryOffline.isOfflineBannerVisible)
+    assertTrue(afterRetryOffline.screenState is ShayariScreenState.Ready)
   }
 
   @Test

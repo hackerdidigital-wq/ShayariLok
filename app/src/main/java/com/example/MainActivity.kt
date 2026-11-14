@@ -10,13 +10,22 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,9 +33,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -37,6 +50,7 @@ import com.example.ui.ShayariScreenState
 import com.example.ui.ShayariViewModel
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.MaintenanceScreen
+import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.ShayariLokTheme
 import kotlinx.coroutines.launch
 
@@ -85,7 +99,7 @@ class MainActivity : ComponentActivity() {
               message = screen.message,
               socialLink = screen.socialLink,
               isRefreshing = uiState.isRefreshing,
-              onRetryClick = { viewModel.refreshConfig(isInitialAutoSync = false) },
+              onRetryClick = { viewModel.retryConnection() },
               onOpenSocialLink = { url -> openExternalBrowser(context, url) },
             )
           }
@@ -95,6 +109,8 @@ class MainActivity : ComponentActivity() {
               readyState = screen,
               textSize = uiState.textSize,
               isRefreshing = uiState.isRefreshing,
+              isOffline = uiState.isOfflineBannerVisible,
+              isNetworkConnected = uiState.isNetworkConnected,
               isSearchVisible = uiState.isSearchVisible,
               unreadNotificationCount = uiState.unreadNotificationCount,
               snackbarHostState = snackbarHostState,
@@ -103,6 +119,7 @@ class MainActivity : ComponentActivity() {
               onToggleSearch = viewModel::toggleSearchVisibility,
               onSearchQueryChange = viewModel::updateSearchQuery,
               onRefreshClick = { viewModel.refreshConfig(isInitialAutoSync = false) },
+              onRetryConnection = viewModel::retryConnection,
               onNotificationsClick = {
                 context.startActivity(Intent(context, NotificationsActivity::class.java))
               },
@@ -157,9 +174,98 @@ class MainActivity : ComponentActivity() {
             }
           }
         }
+
+        if (uiState.showOfflineDialog) {
+          OfflineAlertDialog(
+            isNetworkConnected = uiState.isNetworkConnected,
+            isRetrying = uiState.isRefreshing,
+            onRetryClick = viewModel::retryConnection,
+            onDismissClick = viewModel::dismissOfflineDialog,
+          )
+        }
       }
     }
   }
+}
+
+@Composable
+private fun OfflineAlertDialog(
+  isNetworkConnected: Boolean,
+  isRetrying: Boolean,
+  onRetryClick: () -> Unit,
+  onDismissClick: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismissClick,
+    containerColor = Color.White,
+    icon = {
+      Icon(
+        painter = painterResource(id = R.drawable.ic_wifi_off),
+        contentDescription = null,
+        tint = Color(0xFFB91C1C),
+        modifier = Modifier.size(30.dp),
+      )
+    },
+    title = {
+      Text(
+        text = stringResource(R.string.offline_dialog_title),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color = Color(0xFF1D0D36),
+      )
+    },
+    text = {
+      Text(
+        text =
+          stringResource(
+            if (isNetworkConnected) {
+              R.string.offline_server_unreachable_message
+            } else {
+              R.string.offline_dialog_message
+            }
+          ),
+        style = MaterialTheme.typography.bodyMedium,
+        color = Color(0xFF473E5C),
+      )
+    },
+    confirmButton = {
+      Button(
+        onClick = onRetryClick,
+        enabled = !isRetrying,
+        colors =
+          ButtonDefaults.buttonColors(
+            containerColor = BadgePurple,
+            contentColor = Color.White,
+          ),
+        modifier = Modifier.minimumInteractiveComponentSize().testTag("offline_dialog_retry_button"),
+      ) {
+        if (isRetrying) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(
+              color = Color.White,
+              strokeWidth = 2.dp,
+              modifier = Modifier.size(16.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(text = stringResource(R.string.action_retry))
+          }
+        } else {
+          Text(text = stringResource(R.string.action_retry_hindi))
+        }
+      }
+    },
+    dismissButton = {
+      TextButton(
+        onClick = onDismissClick,
+        modifier = Modifier.minimumInteractiveComponentSize().testTag("offline_dialog_dismiss_button"),
+      ) {
+        Text(
+          text = stringResource(R.string.action_continue_offline),
+          color = Color(0xFF5D5475),
+        )
+      }
+    },
+  )
 }
 
 private fun copyShayariToClipboard(context: Context, item: ShayariItem) {

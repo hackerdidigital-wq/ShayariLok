@@ -30,4 +30,12 @@
     <string name="empty_category_subtitle">Pull or tap Sync to check for new Shayari updates.</string>
     <string name="empty_notifications_title">All caught up</string>
     <string name="empty_notifications_subtitle">New Shayari updates and announcements from the admin feed will appear here.</string>
+    <string name="offline_dialog_title">Offline Mode: No Internet Connection</string>
+    <string name="offline_dialog_message">आप ऑफलाइन हैं, कृपया इंटरनेट चालू करें।\n\nजब तक इंटरनेट वापस नहीं आता, आप अपनी पुरानी सेव की गई शायरियाँ ऑफलाइन पढ़ सकते हैं।</string>
+    <string name="offline_server_unreachable_message">सर्वर (GitHub config.json) तक पहुँच नहीं हो पा रही है। कृपया इंटरनेट कनेक्शन जाँचें या दोबारा कोशिश करें।</string>
+    <string name="offline_banner_text">Offline Mode: No Internet Connection — आप ऑफलाइन हैं</string>
+    <string name="offline_server_banner_text">Server unreachable — पुराना ऑफलाइन डेटा दिखाया जा रहा है</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_retry_hindi">Retry (दोबारा कोशिश करें)</string>
+    <string name="action_continue_offline">Continue Offline</string>
 </resources>

@@ -70,6 +70,9 @@ data class ShayariUiState(
   val screenState: ShayariScreenState = ShayariScreenState.Loading,
   val isRefreshing: Boolean = false,
   val isUsingCachedData: Boolean = false,
+  val isNetworkConnected: Boolean = true,
+  val isServerUnreachable: Boolean = false,
+  val showOfflineDialog: Boolean = false,
   val lastSyncedAtMillis: Long = 0L,
   val textSize: ShayariTextSize = ShayariTextSize.MEDIUM,
   val isSearchVisible: Boolean = false,
@@ -77,7 +80,10 @@ data class ShayariUiState(
   val syncStatusMessage: String? = null,
   val showUpdateDialog: Boolean = false,
   val unreadNotificationCount: Int = 0,
-)
+) {
+  val isOfflineBannerVisible: Boolean
+    get() = !isNetworkConnected || isServerUnreachable
+}
 
 class ShayariViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -88,19 +94,55 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
 
   private var currentConfig: ShayariConfig = repository.loadCachedConfig()
   private var selectedCategory: String =
-    currentConfig.categories.firstOrNull() ?: "Popular"
+    currentConfig.categories.firstOrNull() ?: "All"
   private var activeTab: MainTab = MainTab.EXPLORE
   private var favoriteIds: Set<Int> = repository.getFavoriteIds()
   private var textSize: ShayariTextSize = repository.getShayariTextSize()
   private var searchQuery: String = ""
   private var updateDismissedThisSession: Boolean = false
+  private var hasObservedInitialNetworkState: Boolean = false
 
   init {
+    val initialOnline = repository.isNetworkAvailable()
+    _uiState.update {
+      it.copy(
+        isNetworkConnected = initialOnline,
+        showOfflineDialog = !initialOnline,
+      )
+    }
     publishCurrentState(
       isUsingCached = !repository.hasCachedRemoteConfig(),
       syncMessage = null,
     )
+    observeConnectivity()
     refreshConfig(isInitialAutoSync = true)
+  }
+
+  private fun observeConnectivity() {
+    viewModelScope.launch {
+      repository.observeNetworkConnectivity().collect { isConnected ->
+        val wasConnected = _uiState.value.isNetworkConnected
+        _uiState.update { current ->
+          if (!isConnected) {
+            current.copy(
+              isNetworkConnected = false,
+              showOfflineDialog = true,
+            )
+          } else {
+            current.copy(
+              isNetworkConnected = true,
+              showOfflineDialog = if (current.isServerUnreachable) current.showOfflineDialog else false,
+            )
+          }
+        }
+
+        if (hasObservedInitialNetworkState && isConnected && !wasConnected) {
+          // Internet came back in real time: automatically sync latest GitHub config.json
+          refreshConfig(isInitialAutoSync = true)
+        }
+        hasObservedInitialNetworkState = true
+      }
+    }
   }
 
   fun reloadFromCache() {
@@ -112,7 +154,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         !selectedCategory.equals("All", ignoreCase = true) &&
         currentConfig.categories.none { it.equals(selectedCategory, ignoreCase = true) }
     ) {
-      selectedCategory = currentConfig.categories.firstOrNull() ?: "Popular"
+      selectedCategory = currentConfig.categories.firstOrNull() ?: "All"
     }
     publishCurrentState(
       isUsingCached = _uiState.value.isUsingCachedData,
@@ -120,10 +162,28 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     )
   }
 
+  fun retryConnection() {
+    val currentlyOnline = repository.isNetworkAvailable()
+    _uiState.update { it.copy(isNetworkConnected = currentlyOnline) }
+    refreshConfig(isInitialAutoSync = false)
+  }
+
+  fun dismissOfflineDialog() {
+    _uiState.update { it.copy(showOfflineDialog = false) }
+  }
+
   fun refreshConfig(isInitialAutoSync: Boolean = false) {
     if (_uiState.value.isRefreshing) return
     viewModelScope.launch {
-      _uiState.update { it.copy(isRefreshing = true, syncStatusMessage = null) }
+      val currentlyOnline = repository.isNetworkAvailable()
+      _uiState.update {
+        it.copy(
+          isRefreshing = true,
+          isNetworkConnected = currentlyOnline,
+          syncStatusMessage = null,
+        )
+      }
+
       val result = repository.fetchRemoteConfig()
       result.fold(
         onSuccess = { remoteConfig ->
@@ -133,7 +193,14 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
               !selectedCategory.equals("All", ignoreCase = true) &&
               remoteConfig.categories.none { it.equals(selectedCategory, ignoreCase = true) }
           ) {
-            selectedCategory = remoteConfig.categories.firstOrNull() ?: "Popular"
+            selectedCategory = remoteConfig.categories.firstOrNull() ?: "All"
+          }
+          _uiState.update {
+            it.copy(
+              isNetworkConnected = true,
+              isServerUnreachable = false,
+              showOfflineDialog = false,
+            )
           }
           publishCurrentState(
             isUsingCached = false,
@@ -141,13 +208,23 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
           )
         },
         onFailure = {
+          val onlineAfterAttempt = repository.isNetworkAvailable()
+          _uiState.update {
+            it.copy(
+              isNetworkConnected = onlineAfterAttempt,
+              isServerUnreachable = true,
+              showOfflineDialog = true,
+            )
+          }
           publishCurrentState(
             isUsingCached = true,
             syncMessage =
               if (isInitialAutoSync) {
                 null
+              } else if (!onlineAfterAttempt) {
+                "Offline Mode: No Internet Connection"
               } else {
-                "Offline mode: showing saved Shayari"
+                "Server unreachable: showing saved Shayari"
               },
           )
         },
@@ -167,7 +244,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   fun selectTab(tab: MainTab) {
     activeTab = tab
     if (tab == MainTab.FAVORITES) {
-      selectedCategory = currentConfig.categories.firstOrNull() ?: "Popular"
+      selectedCategory = currentConfig.categories.firstOrNull() ?: "All"
     }
     publishCurrentState(
       isUsingCached = _uiState.value.isUsingCachedData,
