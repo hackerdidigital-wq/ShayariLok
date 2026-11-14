@@ -47,38 +47,63 @@ jobs:
             tr -d '[:space:]' < debug.keystore.base64 | base64 --decode > debug.keystore
           fi
 
-      - name: Decode and Validate Release Keystore
+      - name: Prepare Release Keystore (Custom Secret or Auto-Generated)
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          SECRET_STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          SECRET_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${RELEASE_KEYSTORE_BASE64}" ]; then
-            echo "::error::Missing GitHub Secret: RELEASE_KEYSTORE_BASE64"
-            echo "Create a 2048-bit RSA keystore with alias 'upload' and store its base64 output in GitHub Secrets."
-            exit 1
-          fi
-          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ]; then
-            echo "::error::Missing GitHub Secret: STORE_PASSWORD or KEY_PASSWORD"
-            exit 1
-          fi
-
           KEYSTORE_FILE="${RUNNER_TEMP}/release.keystore"
-          printf '%s' "${RELEASE_KEYSTORE_BASE64}" | tr -d '[:space:]' | base64 --decode > "${KEYSTORE_FILE}"
+          rm -f "${KEYSTORE_FILE}"
 
-          if [ ! -s "${KEYSTORE_FILE}" ]; then
-            echo "::error::Decoded release.keystore is empty. Check RELEASE_KEYSTORE_BASE64."
-            exit 1
+          if [ -n "${RELEASE_KEYSTORE_BASE64}" ]; then
+            echo "Custom RELEASE_KEYSTORE_BASE64 secret detected. Decoding and validating..."
+            if [ -z "${SECRET_STORE_PASSWORD}" ] || [ -z "${SECRET_KEY_PASSWORD}" ]; then
+              echo "::error::RELEASE_KEYSTORE_BASE64 is set, but STORE_PASSWORD or KEY_PASSWORD secret is missing."
+              exit 1
+            fi
+
+            printf '%s' "${RELEASE_KEYSTORE_BASE64}" | tr -d '[:space:]' | base64 --decode > "${KEYSTORE_FILE}"
+            if [ ! -s "${KEYSTORE_FILE}" ]; then
+              echo "::error::Decoded release.keystore is empty. Verify RELEASE_KEYSTORE_BASE64."
+              exit 1
+            fi
+
+            if ! keytool -list -keystore "${KEYSTORE_FILE}" -storepass "${SECRET_STORE_PASSWORD}" -alias upload >/dev/null 2>&1; then
+              echo "::error::Keystore validation failed. Verify STORE_PASSWORD and ensure key alias 'upload' exists."
+              keytool -list -keystore "${KEYSTORE_FILE}" -storepass "${SECRET_STORE_PASSWORD}" || true
+              exit 1
+            fi
+
+            EFFECTIVE_STORE_PASSWORD="${SECRET_STORE_PASSWORD}"
+            EFFECTIVE_KEY_PASSWORD="${SECRET_KEY_PASSWORD}"
+          else
+            echo "::notice::No RELEASE_KEYSTORE_BASE64 secret provided. Generating a fresh 2048-bit RSA release keystore on the fly for this build."
+            GENERATED_PASS=$(openssl rand -hex 16)
+            echo "::add-mask::${GENERATED_PASS}"
+
+            EFFECTIVE_STORE_PASSWORD="${SECRET_STORE_PASSWORD:-$GENERATED_PASS}"
+            EFFECTIVE_KEY_PASSWORD="${SECRET_KEY_PASSWORD:-$EFFECTIVE_STORE_PASSWORD}"
+
+            keytool -genkeypair -noprompt \
+              -keystore "${KEYSTORE_FILE}" \
+              -alias upload \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "${EFFECTIVE_STORE_PASSWORD}" \
+              -keypass "${EFFECTIVE_KEY_PASSWORD}" \
+              -dname "CN=Shayari Lok, OU=Mobile, O=CyberKing Digital, L=New Delhi, ST=Delhi, C=IN"
+
+            keytool -list -keystore "${KEYSTORE_FILE}" -storepass "${EFFECTIVE_STORE_PASSWORD}" -alias upload >/dev/null
           fi
 
-          if ! keytool -list -keystore "${KEYSTORE_FILE}" -storepass "${STORE_PASSWORD}" -alias upload >/dev/null 2>&1; then
-            echo "::error::Keystore validation failed. Check STORE_PASSWORD and ensure key alias 'upload' exists."
-            keytool -list -keystore "${KEYSTORE_FILE}" -storepass "${STORE_PASSWORD}" || true
-            exit 1
-          fi
-
-          echo "KEYSTORE_PATH=${KEYSTORE_FILE}" >> "${GITHUB_ENV}"
+          {
+            echo "KEYSTORE_PATH=${KEYSTORE_FILE}"
+            echo "STORE_PASSWORD=${EFFECTIVE_STORE_PASSWORD}"
+            echo "KEY_PASSWORD=${EFFECTIVE_KEY_PASSWORD}"
+          } >> "${GITHUB_ENV}"
 
       - name: Run Unit Tests
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
@@ -86,8 +111,8 @@ jobs:
       - name: Build Signed Release AAB & APK (R8 Minified)
         env:
           KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ env.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
         run: ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon --stacktrace
 
       - name: Verify Signed Release AAB & APK
