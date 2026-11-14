@@ -1,83 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/apk/res/android"
-    android:width="360dp"
+    android:width="180dp"
     android:height="180dp"
-    android:viewportWidth="360"
+    android:viewportWidth="180"
     android:viewportHeight="180">
-    <!-- Warm sunset sky gradient -->
-    <path android:pathData="M0,0h360v180h-360z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:endX="270"
-                android:endY="180"
-                android:startX="40"
-                android:startY="10"
-                android:type="linear">
-                <item android:color="#FFB84D" android:offset="0.0" />
-                <item android:color="#E85D2C" android:offset="0.38" />
-                <item android:color="#4B193D" android:offset="0.72" />
-                <item android:color="#110B18" android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
-    <!-- Glowing sun halo on left third -->
-    <path android:pathData="M95,88 m-54,0 a54,54 0 1,0 108,0 a54,54 0 1,0 -108,0">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:centerX="95"
-                android:centerY="88"
-                android:gradientRadius="54"
-                android:type="radial">
-                <item android:color="#FFFFEEAA" android:offset="0.0" />
-                <item android:color="#88FF9E3D" android:offset="0.55" />
-                <item android:color="#00FF5E1A" android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
+    <!-- Warm sunset sky bands (solid layered fills for reliable rendering) -->
+    <path
+        android:fillColor="#FF9E3D"
+        android:pathData="M0,0 H180 V180 H0 Z" />
+    <path
+        android:fillColor="#E85D2C"
+        android:pathData="M0,38 H180 V180 H0 Z" />
+    <path
+        android:fillColor="#9A2D4A"
+        android:pathData="M0,74 H180 V180 H0 Z" />
+    <path
+        android:fillColor="#4B193D"
+        android:pathData="M0,104 H180 V180 H0 Z" />
+    <!-- Glowing sun halo & bright sun disc -->
+    <path
+        android:fillColor="#44FFD27D"
+        android:pathData="M90,82 m-54,0 a54,54 0,1 0,108 0 a54,54 0,1 0,-108 0" />
+    <path
+        android:fillColor="#88FFAE42"
+        android:pathData="M90,82 m-34,0 a34,34 0,1 0,68 0 a34,34 0,1 0,-68 0" />
+    <path
+        android:fillColor="#FFF1A8"
+        android:pathData="M90,82 m-19,0 a19,19 0,1 0,38 0 a19,19 0,1 0,-38 0" />
     <!-- Ocean horizon & shimmering water -->
-    <path android:pathData="M0,115 H360 V180 H0 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:endX="280"
-                android:endY="180"
-                android:startX="70"
-                android:startY="115"
-                android:type="linear">
-                <item android:color="#CC6C2D2C" android:offset="0.0" />
-                <item android:color="#EE1B1124" android:offset="0.65" />
-                <item android:color="#FF0E0A14" android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
     <path
-        android:fillColor="#55FFD27D"
-        android:pathData="M45,122 H145 L138,125 H52 Z M62,130 H128 L122,133 H68 Z M75,138 H115 L110,140 H80 Z" />
-    <!-- Coastal rock and romantic couple silhouette -->
+        android:fillColor="#591C3E"
+        android:pathData="M0,114 H180 V180 H0 Z" />
     <path
-        android:fillColor="#140915"
-        android:pathData="M18,162 C40,145 78,142 128,150 C145,153 162,165 170,180 H0 V170 Z" />
+        android:fillColor="#261036"
+        android:pathData="M0,136 H180 V180 H0 Z" />
+    <path
+        android:fillColor="#88FFD27D"
+        android:pathData="M52,121 H128 L122,124 H58 Z M66,129 H114 L109,132 H71 Z M76,137 H104 L100,139 H80 Z" />
+    <!-- Coastal rock & romantic couple silhouette -->
+    <path
+        android:fillColor="#160824"
+        android:pathData="M14,158 C42,142 84,139 144,148 C162,151 174,164 180,180 H0 V168 Z" />
     <!-- Left person silhouette -->
     <path
-        android:fillColor="#0E0710"
-        android:pathData="M78,108 A9,9 0 1,0 78.1,108 Z M66,120 C68,116 86,116 88,122 L91,148 H63 Z" />
+        android:fillColor="#0D0518"
+        android:pathData="M73,104 A8.5,8.5 0,1 0,73.1 104 Z M61,116 C64,112 81,112 83,118 L86,146 H58 Z" />
     <!-- Right person silhouette -->
     <path
-        android:fillColor="#0E0710"
-        android:pathData="M107,110 A8.5,8.5 0 1,0 107.1,110 Z M95,121 C98,117 115,118 117,124 L119,149 H93 Z" />
-    <!-- Smooth dark right-side fade for crisp Devanagari text -->
-    <path android:pathData="M120,0 H360 V180 H120 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:endX="250"
-                android:endY="90"
-                android:startX="120"
-                android:startY="90"
-                android:type="linear">
-                <item android:color="#000E0A14" android:offset="0.0" />
-                <item android:color="#E00E0A14" android:offset="0.65" />
-                <item android:color="#F50E0A14" android:offset="1.0" />
-            </gradient>
-        </aapt:attr>
-    </path>
+        android:fillColor="#0D0518"
+        android:pathData="M105,106 A8.2,8.2 0,1 0,105.1 106 Z M94,117 C97,113 113,114 115,120 L117,147 H92 Z" />
 </vector>

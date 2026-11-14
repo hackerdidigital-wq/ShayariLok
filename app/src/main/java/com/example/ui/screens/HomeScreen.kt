@@ -15,6 +15,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -344,11 +345,10 @@ fun HomeScreen(
                           CircleShape,
                         )
                   )
-                  Icon(
+                  Image(
                     painter = painterResource(id = R.drawable.ic_crown),
                     contentDescription = null,
-                    tint = Color.Unspecified,
-                    modifier = Modifier.size(26.dp),
+                    modifier = Modifier.size(28.dp),
                   )
                 }
                 Spacer(modifier = Modifier.width(6.dp))

@@ -309,7 +309,7 @@ class ExampleRobolectricTest {
   @Test
   fun `copied snackbar message and initial splash state are configured`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
-    assertEquals("Shayari Copied Successfully!", app.getString(R.string.copied_snackbar))
+    assertEquals("Copied Successfully!", app.getString(R.string.copied_snackbar))
 
     val viewModel = ShayariViewModel(app)
     assertTrue(viewModel.uiState.value.isSplashVisible)

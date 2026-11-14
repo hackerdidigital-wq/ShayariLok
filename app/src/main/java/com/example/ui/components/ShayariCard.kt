@@ -17,14 +17,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -131,6 +128,7 @@ fun ShayariCard(
     }
 
   val cardShape = RoundedCornerShape(18.dp)
+  val thumbShape = RoundedCornerShape(14.dp)
 
   ElevatedCard(
     shape = cardShape,
@@ -161,41 +159,43 @@ fun ShayariCard(
     Row(
       modifier =
         Modifier.fillMaxWidth()
-          .height(IntrinsicSize.Min)
-          .heightIn(min = 156.dp)
           .background(
             Brush.horizontalGradient(
               colors =
                 listOf(
-                  Color(0xFF1A0936),
-                  Color(0xFF120724),
+                  Color(0xFF1C0A3A),
+                  Color(0xFF130726),
                   Color(0xFF0E061B),
                 )
             )
           )
-          .padding(10.dp),
-      verticalAlignment = Alignment.CenterVertically,
+          .padding(12.dp),
+      verticalAlignment = Alignment.Top,
     ) {
-      // Side Image Thumbnail (Admin-uploaded Gallery Photo / Remote Image or Poster Artwork)
+      // Compact Proportional Side Thumbnail (fixed aspect box so multi-line text never stretches it)
       Box(
         modifier =
-          Modifier.width(110.dp)
-            .fillMaxHeight()
-            .heightIn(min = 136.dp)
-            .clip(RoundedCornerShape(14.dp))
+          Modifier.size(width = 104.dp, height = 114.dp)
+            .clip(thumbShape)
+            .background(
+              Brush.linearGradient(
+                colors = listOf(Color(0xFF421970), Color(0xFF7B2163), Color(0xFF210B3E))
+              )
+            )
             .border(
-              width = 1.dp,
+              width = 1.1.dp,
               brush =
                 Brush.verticalGradient(
-                  colors = listOf(CrownGold.copy(alpha = 0.55f), NeonPink.copy(alpha = 0.45f))
+                  colors = listOf(CrownGold.copy(alpha = 0.65f), NeonPink.copy(alpha = 0.55f))
                 ),
-              shape = RoundedCornerShape(14.dp),
+              shape = thumbShape,
             )
             .testTag("shayari_thumbnail_${item.id}")
       ) {
         Crossfade(
           targetState = remoteOrGalleryBitmap,
           animationSpec = tween(durationMillis = 320),
+          modifier = Modifier.fillMaxSize(),
           label = "thumbnailCrossfade",
         ) { loadedBitmap ->
           if (loadedBitmap != null) {
@@ -215,15 +215,15 @@ fun ShayariCard(
           }
         }
 
-        // Smooth edge blend gradient so thumbnail integrates into the dark velvet card
+        // Subtle inner edge vignette so the framed photo blends softly without darkening artwork
         Box(
           modifier =
             Modifier.matchParentSize()
               .background(
                 Brush.horizontalGradient(
                   0.0f to Color.Transparent,
-                  0.68f to Color(0x180E061B),
-                  1.0f to Color(0x880E061B),
+                  0.75f to Color.Transparent,
+                  1.0f to Color(0x360E061B),
                 )
               )
         )
@@ -233,32 +233,26 @@ fun ShayariCard(
 
       // Right Content Column: Category Badge + Shayari Text + Smart Copy/Share/Favorite Bar
       Column(
-        modifier = Modifier.weight(1f).fillMaxHeight(),
-        verticalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.Top,
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
+        Surface(
+          shape = RoundedCornerShape(50),
+          color = NeonPurple.copy(alpha = 0.28f),
+          border = BorderStroke(0.8.dp, NeonVioletGlow.copy(alpha = 0.5f)),
         ) {
-          Surface(
-            shape = RoundedCornerShape(50),
-            color = NeonPurple.copy(alpha = 0.28f),
-            border = BorderStroke(0.8.dp, NeonVioletGlow.copy(alpha = 0.5f)),
-          ) {
-            Text(
-              text = item.category,
-              style = MaterialTheme.typography.labelSmall,
-              fontWeight = FontWeight.SemiBold,
-              color = Color(0xFFEBD8FF),
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
-            )
-          }
+          Text(
+            text = item.category,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFFEBD8FF),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+          )
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(7.dp))
 
         Text(
           text = item.text,
@@ -273,7 +267,7 @@ fun ShayariCard(
           modifier = Modifier.fillMaxWidth().padding(end = 2.dp),
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Smart Copy Button + Share + Heart Action Row
         Row(

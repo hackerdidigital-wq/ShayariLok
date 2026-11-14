@@ -8,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -209,11 +210,10 @@ fun ShayariSplashScreen(
               ),
         ) {
           Box(contentAlignment = Alignment.Center) {
-            Icon(
+            Image(
               painter = painterResource(id = R.drawable.ic_crown),
               contentDescription = appName,
-              tint = Color.Unspecified,
-              modifier = Modifier.size(48.dp),
+              modifier = Modifier.size(50.dp),
             )
           }
         }
