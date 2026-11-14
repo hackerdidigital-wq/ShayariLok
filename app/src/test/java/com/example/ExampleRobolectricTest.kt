@@ -156,14 +156,19 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `remote endpoints target live ShayariLok repo and append cache busters`() {
+  fun `remote endpoints target live ShayariLok-Admin- repo and append cache busters`() {
     assertEquals(
-      "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok/main/config.json",
+      "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok-Admin-/main/config.json",
       DefaultShayariData.DEFAULT_REMOTE_CONFIG_URL,
     )
     assertTrue(
       DefaultShayariData.REMOTE_CONFIG_ENDPOINTS.contains(
-        "https://cdn.jsdelivr.net/gh/hackerdidigital-wq/ShayariLok@main/config.json"
+        "https://cdn.jsdelivr.net/gh/hackerdidigital-wq/ShayariLok-Admin-@main/config.json"
+      )
+    )
+    assertTrue(
+      DefaultShayariData.REMOTE_CONFIG_ENDPOINTS.contains(
+        "https://api.github.com/repos/hackerdidigital-wq/ShayariLok-Admin-/contents/config.json?ref=main"
       )
     )
 
@@ -177,6 +182,25 @@ class ExampleRobolectricTest {
       "https://example.com/config.json?raw=1&t=12345",
       repo.buildCacheBustedUrl("https://example.com/config.json?raw=1", 12345L),
     )
+  }
+
+  @Test
+  fun `unwrapGitHubContentsPayloadIfNeeded decodes base64 GitHub Contents API response`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val repo = ShayariRepository(app)
+    val rawConfig =
+      """{"app_name":"Shayari Lok","latest_version_code":2,"categories":["All","Love"],"shayari_list":[{"id":6,"category":"Love","text":"I love you tanisha","author":"Tan8sha"}]}"""
+    val b64 =
+      android.util.Base64.encodeToString(rawConfig.toByteArray(Charsets.UTF_8), android.util.Base64.DEFAULT)
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+    val apiWrapper = """{"encoding":"base64","content":"$b64"}"""
+
+    val unwrapped = repo.unwrapGitHubContentsPayloadIfNeeded(apiWrapper)
+    val parsed = ShayariConfig.fromJson(unwrapped)
+    assertEquals(2, parsed.latestVersionCode)
+    assertEquals(1, parsed.shayariList.size)
+    assertEquals("I love you tanisha", parsed.shayariList.first().text)
   }
 
   @Test
@@ -198,14 +222,20 @@ class ExampleRobolectricTest {
           "categories": ["All", "Love", "Dosti"],
           "notifications": [
             {
-              "id": 9,
-              "title": "दोस्ती स्पेशल",
-              "message": "नई दोस्ती शायरी लाइव हो गई है।",
-              "badge": "New",
-              "time_label": "Just Now"
+              "id": 3,
+              "title": "9999",
+              "message": "99999999",
+              "badge": "Shayari Alert",
+              "time_label": "Today"
             }
           ],
           "shayari_list": [
+            {
+              "id": 6,
+              "category": "Love",
+              "text": "I love you tanisha",
+              "author": "Tan8sha"
+            },
             {
               "id": 99,
               "category": "Dosti",
@@ -247,9 +277,10 @@ class ExampleRobolectricTest {
         val synced = result.getOrThrow()
         assertEquals(2, synced.latestVersionCode)
         assertEquals(listOf("All", "Love", "Dosti"), synced.categories)
-        assertEquals(1, synced.shayariList.size)
-        assertEquals(99, synced.shayariList.first().id)
-        assertEquals("Dosti", synced.shayariList.first().category)
+        assertEquals(2, synced.shayariList.size)
+        assertEquals(6, synced.shayariList.first().id)
+        assertEquals("I love you tanisha", synced.shayariList.first().text)
+        assertEquals(3, synced.notifications.first().id)
         assertTrue(repo.hasUnreadNotifications(synced))
         assertTrue(repo.hasCachedRemoteConfig())
         assertTrue(repo.getLastSyncedTimeMillis() > 0L)

@@ -28,11 +28,12 @@ data class ShayariItem(
 
   companion object {
     fun fromJson(json: JSONObject, fallbackId: Int = -1): ShayariItem? {
-      val parsedId = json.optFlexibleInt("id", fallbackId)
-      val category = json.optCleanString("category")
+      val rawId = json.optFlexibleInt("id", fallbackId)
+      val parsedId = if (rawId >= 0) rawId else fallbackId.coerceAtLeast(1)
+      val category = json.optCleanString("category").ifEmpty { "All" }
       val text = json.optCleanString("text")
       val author = json.optCleanString("author")
-      if (parsedId < 0 || category.isEmpty() || text.isEmpty()) return null
+      if (text.isEmpty()) return null
       return ShayariItem(
         id = parsedId,
         category = category,

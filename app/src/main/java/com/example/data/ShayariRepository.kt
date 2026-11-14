@@ -5,11 +5,13 @@ import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.util.Base64
 import com.example.model.ShayariConfig
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -102,7 +104,8 @@ class ShayariRepository(context: Context) {
       var lastError: Exception? = null
       for (endpoint in endpoints) {
         try {
-          val rawJson = fetchJsonFromUrl(buildCacheBustedUrl(endpoint))
+          val rawResponse = fetchJsonFromUrl(buildCacheBustedUrl(endpoint))
+          val rawJson = unwrapGitHubContentsPayloadIfNeeded(rawResponse)
           val parsedConfig = ShayariConfig.fromJson(rawJson)
           val now = System.currentTimeMillis()
           prefs.edit()
@@ -126,6 +129,19 @@ class ShayariRepository(context: Context) {
     return "${endpoint}${separator}t=${timestampMillis}"
   }
 
+  internal fun unwrapGitHubContentsPayloadIfNeeded(rawPayload: String): String {
+    val trimmed = rawPayload.trimStart('\uFEFF').trim()
+    val json = JSONObject(trimmed)
+    val encoding = json.optString("encoding", "")
+    val content = json.optString("content", "")
+    if (encoding.equals("base64", ignoreCase = true) && content.isNotBlank() && !json.has("shayari_list")) {
+      val cleanBase64 = content.replace("\n", "").replace("\r", "").trim()
+      val decodedBytes = Base64.decode(cleanBase64, Base64.DEFAULT)
+      return String(decodedBytes, Charsets.UTF_8)
+    }
+    return trimmed
+  }
+
   private fun fetchJsonFromUrl(endpoint: String): String {
     var connection: HttpURLConnection? = null
     try {
@@ -137,7 +153,10 @@ class ShayariRepository(context: Context) {
           connectTimeout = CONNECT_TIMEOUT_MS
           readTimeout = READ_TIMEOUT_MS
           useCaches = false
-          setRequestProperty("Accept", "application/json")
+          setRequestProperty(
+            "Accept",
+            "application/vnd.github.raw+json, application/json, text/plain;q=0.9, */*;q=0.8",
+          )
           setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
           setRequestProperty("Pragma", "no-cache")
           setRequestProperty("User-Agent", "ShayariLok-Android/1.0")
