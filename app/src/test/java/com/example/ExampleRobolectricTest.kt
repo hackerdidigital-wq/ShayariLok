@@ -1,11 +1,14 @@
 package com.example
 
+import android.app.Application
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.DefaultShayariData
 import com.example.data.ShayariRepository
 import com.example.data.ShayariTextSize
 import com.example.model.ShayariConfig
+import com.example.ui.ShayariScreenState
+import com.example.ui.ShayariViewModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,16 +29,71 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `default config json parses categories, shayari items, and notifications cleanly`() {
+  fun `live admin panel config json parses all required fields cleanly`() {
     val parsed = ShayariConfig.fromJson(DefaultShayariData.DEFAULT_CONFIG_JSON)
     assertEquals("Shayari Lok", parsed.appName)
+    assertEquals(1, parsed.latestVersionCode)
     assertFalse(parsed.maintenanceMode)
-    assertTrue(parsed.categories.contains("Popular"))
-    assertTrue(parsed.categories.contains("Love"))
-    assertTrue(parsed.categories.contains("Sad"))
-    assertTrue(parsed.categories.contains("Motivational"))
-    assertTrue(parsed.shayariList.isNotEmpty())
-    assertTrue(parsed.notifications.isNotEmpty())
+    assertTrue(parsed.adsEnabled)
+    assertEquals(listOf("All", "Love", "Attitude", "Motivation", "Sad"), parsed.categories)
+    assertEquals(5, parsed.shayariList.size)
+    assertEquals(2, parsed.notifications.size)
+    assertEquals("अज्ञात", parsed.shayariList.first().author)
+  }
+
+  @Test
+  fun `maintenance_mode true switches ViewModel to Maintenance screen`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val prefs = app.getSharedPreferences("shayari_lok_prefs", Context.MODE_PRIVATE)
+    prefs.edit()
+      .putString(
+        "cached_config_json",
+        """
+        {
+          "app_name": "Shayari Lok",
+          "latest_version_code": 1,
+          "maintenance_mode": true,
+          "maintenance_message": "हम ऐप को और बेहतर बना रहे हैं। कृपया कुछ समय बाद पुनः प्रयास करें।",
+          "categories": ["All", "Love"],
+          "shayari_list": []
+        }
+        """.trimIndent(),
+      )
+      .commit()
+
+    val viewModel = ShayariViewModel(app)
+    val state = viewModel.uiState.value.screenState
+    assertTrue(state is ShayariScreenState.Maintenance)
+    val maintenance = state as ShayariScreenState.Maintenance
+    assertEquals("Shayari Lok", maintenance.appName)
+    assertTrue(maintenance.message.contains("हम ऐप को और बेहतर बना रहे हैं"))
+
+    prefs.edit().clear().commit()
+  }
+
+  @Test
+  fun `fromJson handles UTF-8 BOM, string booleans, and duplicate ids without crashing`() {
+    val malformedButValid =
+      "\uFEFF" +
+        """
+        {
+          "app_name": "Shayari Lok",
+          "latest_version_code": "2",
+          "maintenance_mode": "true",
+          "categories": ["Love", "Love", "Sad"],
+          "shayari_list": [
+            { "id": 1, "category": "Love", "text": "Line 1" },
+            { "id": 1, "category": "Sad", "text": "Line 2" }
+          ]
+        }
+        """.trimIndent()
+
+    val parsed = ShayariConfig.fromJson(malformedButValid)
+    assertEquals(2, parsed.latestVersionCode)
+    assertTrue(parsed.maintenanceMode)
+    assertEquals(listOf("All", "Love", "Sad"), parsed.categories)
+    assertEquals(2, parsed.shayariList.size)
+    assertEquals(2, parsed.shayariList.map { it.id }.toSet().size)
   }
 
   @Test

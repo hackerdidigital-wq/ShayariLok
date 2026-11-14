@@ -22,7 +22,7 @@ enum class ShayariTextSize(val label: String, val fontSizeSp: Int, val lineHeigh
  * Ultra-lightweight data repository using pure Android HttpURLConnection,
  * org.json, and SharedPreferences for offline caching, reading preferences, and favorites.
  *
- * The remote config endpoint is kept strictly internal (never exposed in the UI).
+ * Remote GitHub Raw config.json URLs are kept strictly internal and never exposed in UI.
  */
 class ShayariRepository(context: Context) {
 
@@ -93,45 +93,54 @@ class ShayariRepository(context: Context) {
         return@withContext Result.failure(IllegalStateException("Offline mode active"))
       }
 
-      var connection: HttpURLConnection? = null
-      try {
-        val url = URL(REMOTE_CONFIG_URL)
-        connection =
-          (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            useCaches = false
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Cache-Control", "no-cache")
-          }
+      var lastError: Exception? = null
+      for (endpoint in DefaultShayariData.REMOTE_CONFIG_ENDPOINTS) {
+        try {
+          val rawJson = fetchJsonFromUrl(endpoint)
+          val parsedConfig = ShayariConfig.fromJson(rawJson)
+          val now = System.currentTimeMillis()
+          prefs.edit()
+            .putString(KEY_CACHED_CONFIG_JSON, rawJson)
+            .putLong(KEY_LAST_SYNCED_AT, now)
+            .apply()
+          return@withContext Result.success(parsedConfig)
+        } catch (e: Exception) {
+          lastError = e
+        }
+      }
 
-        val responseCode = connection.responseCode
-        if (responseCode !in 200..299) {
-          return@withContext Result.failure(
-            IllegalStateException("Server responded with HTTP $responseCode")
-          )
+      Result.failure(lastError ?: IllegalStateException("Unable to fetch remote config.json"))
+    }
+
+  private fun fetchJsonFromUrl(endpoint: String): String {
+    var connection: HttpURLConnection? = null
+    try {
+      val url = URL(endpoint)
+      connection =
+        (url.openConnection() as HttpURLConnection).apply {
+          requestMethod = "GET"
+          instanceFollowRedirects = true
+          connectTimeout = CONNECT_TIMEOUT_MS
+          readTimeout = READ_TIMEOUT_MS
+          useCaches = false
+          setRequestProperty("Accept", "application/json")
+          setRequestProperty("Cache-Control", "no-cache")
+          setRequestProperty("User-Agent", "ShayariLok-Android/1.0")
         }
 
-        val rawJson =
-          BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { reader ->
-            reader.readText()
-          }
-
-        val parsedConfig = ShayariConfig.fromJson(rawJson)
-        val now = System.currentTimeMillis()
-        prefs.edit()
-          .putString(KEY_CACHED_CONFIG_JSON, rawJson)
-          .putLong(KEY_LAST_SYNCED_AT, now)
-          .apply()
-
-        Result.success(parsedConfig)
-      } catch (e: Exception) {
-        Result.failure(e)
-      } finally {
-        connection?.disconnect()
+      val responseCode = connection.responseCode
+      if (responseCode !in 200..299) {
+        connection.errorStream?.close()
+        throw IllegalStateException("Server responded with HTTP $responseCode")
       }
+
+      return BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { reader ->
+        reader.readText()
+      }
+    } finally {
+      connection?.disconnect()
     }
+  }
 
   private fun isNetworkAvailable(): Boolean {
     val connectivityManager =
@@ -143,8 +152,6 @@ class ShayariRepository(context: Context) {
   }
 
   companion object {
-    // Hardcoded internal GitHub Raw config.json endpoint — never exposed to end users in UI
-    private const val REMOTE_CONFIG_URL = DefaultShayariData.DEFAULT_REMOTE_CONFIG_URL
     private const val PREFS_NAME = "shayari_lok_prefs"
     private const val KEY_CACHED_CONFIG_JSON = "cached_config_json"
     private const val KEY_LAST_SYNCED_AT = "last_synced_at"

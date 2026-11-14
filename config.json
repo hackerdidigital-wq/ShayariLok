@@ -3,92 +3,67 @@
   "latest_version_code": 1,
   "force_update_url": "https://play.google.com/store/apps/details?id=com.cyberking.shayarilok",
   "maintenance_mode": false,
-  "maintenance_message": "Hum naye lafzon ke saath wapas aa rahe hain. Kripya thodi der baad koshish karein.",
-  "privacy_policy_url": "https://cyberking-dev.github.io/shayarilok-config/privacy-policy.html",
+  "maintenance_message": "हम ऐप को और बेहतर बना रहे हैं। कृपया कुछ समय बाद पुनः प्रयास करें।",
+  "privacy_policy_url": "https://hackerdidigital-wq.github.io/ShayariLok-Admin-/privacy.html",
   "social_link": "https://t.me/shayarilok_official",
-  "ads_enabled": false,
-  "banner_ad_id": "",
-  "interstitial_ad_id": "",
-  "announcement_title": "Nayi Mehfil Update",
-  "announcement_message": "Shayari Lok mein aapka swagat hai! Har roz nayi Hindi aur Hinglish shayari bina kisi login ke padhein aur share karein.",
+  "ads_enabled": true,
+  "banner_ad_id": "ca-app-pub-3940256099942544/6300978111",
+  "interstitial_ad_id": "ca-app-pub-3940256099942544/1033173712",
+  "announcement_title": "नई हिंदी शायरी संग्रह लाइव है",
+  "announcement_message": "आज ही Love और Motivation कैटेगरी में नई चुनिंदा शायरियाँ पढ़ें और दोस्तों के साथ शेयर करें।",
   "notifications": [
     {
       "id": 1,
-      "title": "Nayi Mehfil Collection Live",
-      "message": "Love, Sad, Motivational aur Attitude categories mein nayi shayari jodi gayi hai. Offline padhne ke liye dil (Heart) icon se save karein.",
+      "title": "आज की ख़ास शायरी",
+      "message": "दिल को छू लेने वाली नई मोहब्बत शायरियाँ जोड़ दी गई हैं।",
       "badge": "Shayari Alert",
       "time_label": "Today"
     },
     {
       "id": 2,
-      "title": "Ultra-Lightweight Offline Ready",
-      "message": "Aapki last synced shayari bina internet ke bhi hamesha uplabdh rehti hai.",
+      "title": "Shayari Lok v1.0 Live",
+      "message": "वन-टैप कॉपी और WhatsApp शेयर फ़ीचर के साथ नया अपडेट उपलब्ध है।",
       "badge": "App Info",
       "time_label": "Pinned"
-    },
-    {
-      "id": 3,
-      "title": "Shayari ka Duniya, Hamesha Saath",
-      "message": "Apni pasandida shayari ko ek tap mein WhatsApp aur doston ke saath share karein.",
-      "badge": "Highlight",
-      "time_label": "New"
     }
   ],
   "categories": [
-    "Popular",
+    "All",
     "Love",
-    "Sad",
-    "Motivational",
-    "Attitude"
+    "Attitude",
+    "Motivation",
+    "Sad"
   ],
   "shayari_list": [
     {
-      "id": 101,
+      "id": 1,
       "category": "Love",
-      "text": "कुछ लोग दिल से\nबहुत अच्छे होते हैं...\nबस किस्मत से नहीं मिलते...",
-      "author": "Shayari Lok"
+      "text": "तेरी ख़ामोशी भी मुझसे कुछ कहती है,\nहर धड़कन में तेरी ही याद रहती है।",
+      "author": "अज्ञात"
     },
     {
-      "id": 102,
-      "category": "Sad",
-      "text": "तन्हाई भी क्या चीज़ है...\nजब अपने ही साथ\nना दें...",
-      "author": "Ehsaas"
-    },
-    {
-      "id": 103,
-      "category": "Motivational",
-      "text": "मुस्कुराना सीख लो यारो,\nज़िंदगी में मुश्किलें तो\nआएँगी ही...",
-      "author": "Prerna"
-    },
-    {
-      "id": 104,
-      "category": "Love",
-      "text": "तेरी मुस्कान ही मेरी पहचान बन गई,\nतेरी खुशी ही मेरी जान बन गई,\nकुछ इस कदर बसाया तुझे दिल में,\nकि तेरी याद ही मेरी सुबह-शाम बन गई।",
-      "author": "Dil Se"
-    },
-    {
-      "id": 105,
+      "id": 2,
       "category": "Attitude",
-      "text": "हम अपने अंदाज़ में ही मस्त रहते हैं,\nदूसरों की नकल करना हमारी फितरत में नहीं,\nवक्त आने पर जवाब खामोशी से देते हैं।",
-      "author": "Royal Thoughts"
+      "text": "हम वो नहीं जो वक़्त के साथ बदल जाएं,\nहम वो हैं जो वक़्त का रुख मोड़ कर दिखाएं।",
+      "author": "CyberKing"
     },
     {
-      "id": 106,
-      "category": "Motivational",
-      "text": "मंज़िलें उन्हीं को मिलती हैं,\nजिनके सपनों में जान होती है,\nसिर्फ पंखों से कुछ नहीं होता,\nहौसलों से ही असली उड़ान होती है।",
-      "author": "Udaan"
+      "id": 3,
+      "category": "Motivation",
+      "text": "मंज़िलें उन्हीं को मिलती हैं जिनके सपनों में जान होती है,\nपंखों से कुछ नहीं होता, हौसलों से उड़ान होती है।",
+      "author": "रफ़्तार"
     },
     {
-      "id": 107,
+      "id": 4,
       "category": "Sad",
-      "text": "खामोशियां भी बहुत कुछ कह जाती हैं,\nबस उन्हें सुनने वाला कोई अपना होना चाहिए।",
-      "author": "Tanhaai"
+      "text": "कुछ दर्द ऐसे भी होते हैं जो बयाँ नहीं होते,\nबस आँखों की नमी में चुपचाप बह जाते हैं।",
+      "author": "राही"
     },
     {
-      "id": 108,
+      "id": 5,
       "category": "Love",
-      "text": "चाँद को गुरूर है अपनी चाँदनी पर,\nऔर हमें गुरूर है तुम्हारी सादगी पर।",
-      "author": "Shayari Lok"
+      "text": "Kabhi lafzon mein na dhoondhna wafa meri,\nKhamoshiyon mein bhi sirf tera hi naam likha hai.",
+      "author": "Aarav"
     }
   ]
 }

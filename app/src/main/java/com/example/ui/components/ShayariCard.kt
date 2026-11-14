@@ -80,7 +80,8 @@ fun ShayariCard(
     remember(item.id, item.category) {
       when {
         item.category.equals("Sad", ignoreCase = true) -> R.drawable.img_card_silhouette
-        item.category.equals("Motivational", ignoreCase = true) -> R.drawable.img_card_roses
+        item.category.equals("Motivation", ignoreCase = true) ||
+          item.category.equals("Motivational", ignoreCase = true) -> R.drawable.img_card_roses
         item.category.equals("Attitude", ignoreCase = true) -> R.drawable.img_card_roses
         item.id % 3 == 2 -> R.drawable.img_card_silhouette
         item.id % 3 == 0 -> R.drawable.img_card_roses

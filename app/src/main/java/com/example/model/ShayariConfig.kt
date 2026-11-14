@@ -7,8 +7,8 @@ import org.json.JSONObject
  * Pure native data models for Shayari Lok remote configuration.
  * Parsed using Android's built-in org.json to keep APK size ultra-lightweight.
  *
- * Schema matches the remote GitHub Raw config.json 1:1 so this file can
- * also be reused directly when building a connected Admin Panel.
+ * Crash-safe parsing handles BOM headers, string-typed booleans/numbers,
+ * missing optional fields, and duplicate IDs cleanly.
  */
 data class ShayariItem(
   val id: Int,
@@ -27,14 +27,14 @@ data class ShayariItem(
     }
 
   companion object {
-    fun fromJson(json: JSONObject): ShayariItem? {
-      val id = json.optInt("id", -1)
-      val category = json.optString("category", "").trim()
-      val text = json.optString("text", "").trim()
-      val author = json.optString("author", "").trim()
-      if (id < 0 || category.isEmpty() || text.isEmpty()) return null
+    fun fromJson(json: JSONObject, fallbackId: Int = -1): ShayariItem? {
+      val parsedId = json.optFlexibleInt("id", fallbackId)
+      val category = json.optCleanString("category")
+      val text = json.optCleanString("text")
+      val author = json.optCleanString("author")
+      if (parsedId < 0 || category.isEmpty() || text.isEmpty()) return null
       return ShayariItem(
-        id = id,
+        id = parsedId,
         category = category,
         text = text,
         author = author,
@@ -61,12 +61,12 @@ data class ShayariNotification(
 
   companion object {
     fun fromJson(json: JSONObject, fallbackId: Int): ShayariNotification? {
-      val id = json.optInt("id", fallbackId)
-      val title = json.optString("title", "").trim()
-      val message = json.optString("message", "").trim()
+      val id = json.optFlexibleInt("id", fallbackId).let { if (it < 0) fallbackId else it }
+      val title = json.optCleanString("title")
+      val message = json.optCleanString("message")
       if (title.isEmpty() && message.isEmpty()) return null
-      val badge = json.optString("badge", "Update").trim().ifEmpty { "Update" }
-      val timeLabel = json.optString("time_label", "Latest").trim().ifEmpty { "Latest" }
+      val badge = json.optCleanString("badge").ifEmpty { "Update" }
+      val timeLabel = json.optCleanString("time_label").ifEmpty { "Latest" }
       return ShayariNotification(
         id = id,
         title = title.ifEmpty { "Shayari Alert" },
@@ -132,35 +132,49 @@ data class ShayariConfig(
 
   companion object {
     const val DEFAULT_MAINTENANCE_MESSAGE =
-      "Shayari Lok is currently undergoing scheduled updates. Please check back shortly."
-    val DEFAULT_CATEGORIES = listOf("Popular", "Love", "Sad", "Motivational", "Attitude")
+      "हम ऐप को और बेहतर बना रहे हैं। कृपया कुछ समय बाद पुनः प्रयास करें।"
+    val DEFAULT_CATEGORIES = listOf("All", "Love", "Attitude", "Motivation", "Sad")
 
     fun fromJson(rawJson: String): ShayariConfig {
-      val root = JSONObject(rawJson)
-      val appName = root.optString("app_name", "Shayari Lok").ifBlank { "Shayari Lok" }
-      val latestVersionCode = root.optInt("latest_version_code", 1)
-      val forceUpdateUrl = root.optString("force_update_url", "").trim()
-      val maintenanceMode = root.optBoolean("maintenance_mode", false)
+      val sanitized = rawJson.trimStart('\uFEFF').trim()
+      val root = JSONObject(sanitized)
+
+      val appName = root.optCleanString("app_name").ifEmpty { "Shayari Lok" }
+      val latestVersionCode = root.optFlexibleInt("latest_version_code", 1).coerceAtLeast(1)
+      val forceUpdateUrl = root.optCleanString("force_update_url")
+      val maintenanceMode = root.optFlexibleBoolean("maintenance_mode", false)
       val maintenanceMessage =
-        root.optString("maintenance_message", DEFAULT_MAINTENANCE_MESSAGE)
-          .ifBlank { DEFAULT_MAINTENANCE_MESSAGE }
-      val privacyPolicyUrl = root.optString("privacy_policy_url", "").trim()
-      val socialLink = root.optString("social_link", "").trim()
-      val adsEnabled = root.optBoolean("ads_enabled", false)
-      val bannerAdId = root.optString("banner_ad_id", "").trim()
-      val interstitialAdId = root.optString("interstitial_ad_id", "").trim()
-      val announcementTitle = root.optString("announcement_title", "").trim()
-      val announcementMessage = root.optString("announcement_message", "").trim()
+        root.optCleanString("maintenance_message").ifEmpty { DEFAULT_MAINTENANCE_MESSAGE }
+      val privacyPolicyUrl = root.optCleanString("privacy_policy_url")
+      val socialLink = root.optCleanString("social_link")
+      val adsEnabled = root.optFlexibleBoolean("ads_enabled", false)
+      val bannerAdId = root.optCleanString("banner_ad_id")
+      val interstitialAdId = root.optCleanString("interstitial_ad_id")
+      val announcementTitle = root.optCleanString("announcement_title")
+      val announcementMessage = root.optCleanString("announcement_message")
 
       val notifications = mutableListOf<ShayariNotification>()
+      val seenNotificationIds = mutableSetOf<Int>()
       val notificationsJson = root.optJSONArray("notifications")
       if (notificationsJson != null) {
         for (i in 0 until notificationsJson.length()) {
           val obj = notificationsJson.optJSONObject(i) ?: continue
-          ShayariNotification.fromJson(obj, fallbackId = i + 1)?.let { notifications.add(it) }
+          val parsed = ShayariNotification.fromJson(obj, fallbackId = i + 1) ?: continue
+          val uniqueId =
+            if (seenNotificationIds.add(parsed.id)) {
+              parsed.id
+            } else {
+              var candidate = (seenNotificationIds.maxOrNull() ?: 0) + 1
+              while (!seenNotificationIds.add(candidate)) candidate++
+              candidate
+            }
+          notifications.add(if (uniqueId == parsed.id) parsed else parsed.copy(id = uniqueId))
         }
       }
-      if (notifications.isEmpty() && (announcementTitle.isNotBlank() || announcementMessage.isNotBlank())) {
+      if (
+        notifications.isEmpty() &&
+          (announcementTitle.isNotBlank() || announcementMessage.isNotBlank())
+      ) {
         notifications.add(
           ShayariNotification(
             id = 1,
@@ -177,23 +191,40 @@ data class ShayariConfig(
       if (categoriesJson != null) {
         for (i in 0 until categoriesJson.length()) {
           val cat = categoriesJson.optString(i, "").trim()
-          if (cat.isNotEmpty() && cat !in categories) {
+          if (cat.isNotEmpty() && !cat.equals("null", ignoreCase = true) && categories.none {
+              it.equals(cat, ignoreCase = true)
+            }
+          ) {
             categories.add(cat)
           }
         }
       }
       if (categories.isEmpty()) {
         categories.addAll(DEFAULT_CATEGORIES)
-      } else if (categories.none { it.equals("Popular", ignoreCase = true) || it.equals("All", ignoreCase = true) }) {
-        categories.add(0, "Popular")
+      } else if (
+        categories.none {
+          it.equals("All", ignoreCase = true) || it.equals("Popular", ignoreCase = true)
+        }
+      ) {
+        categories.add(0, "All")
       }
 
       val shayariItems = mutableListOf<ShayariItem>()
+      val seenShayariIds = mutableSetOf<Int>()
       val listJson = root.optJSONArray("shayari_list")
       if (listJson != null) {
         for (i in 0 until listJson.length()) {
           val itemObj = listJson.optJSONObject(i) ?: continue
-          ShayariItem.fromJson(itemObj)?.let { shayariItems.add(it) }
+          val parsed = ShayariItem.fromJson(itemObj, fallbackId = i + 1) ?: continue
+          val uniqueId =
+            if (seenShayariIds.add(parsed.id)) {
+              parsed.id
+            } else {
+              var candidate = (seenShayariIds.maxOrNull() ?: 0) + 1
+              while (!seenShayariIds.add(candidate)) candidate++
+              candidate
+            }
+          shayariItems.add(if (uniqueId == parsed.id) parsed else parsed.copy(id = uniqueId))
         }
       }
 
@@ -215,5 +246,34 @@ data class ShayariConfig(
         shayariList = shayariItems,
       )
     }
+  }
+}
+
+private fun JSONObject.optCleanString(key: String): String {
+  if (isNull(key)) return ""
+  return optString(key, "").trim().let { if (it.equals("null", ignoreCase = true)) "" else it }
+}
+
+private fun JSONObject.optFlexibleInt(key: String, defaultValue: Int): Int {
+  if (!has(key) || isNull(key)) return defaultValue
+  return when (val raw = opt(key)) {
+    is Number -> raw.toInt()
+    is String -> raw.trim().toIntOrNull() ?: defaultValue
+    else -> defaultValue
+  }
+}
+
+private fun JSONObject.optFlexibleBoolean(key: String, defaultValue: Boolean): Boolean {
+  if (!has(key) || isNull(key)) return defaultValue
+  return when (val raw = opt(key)) {
+    is Boolean -> raw
+    is String ->
+      when (raw.trim().lowercase()) {
+        "true", "1", "yes" -> true
+        "false", "0", "no" -> false
+        else -> defaultValue
+      }
+    is Number -> raw.toInt() != 0
+    else -> defaultValue
   }
 }
