@@ -111,12 +111,50 @@ jobs:
             echo "KEY_PASSWORD=${EFFECTIVE_KEY_PASSWORD}"
           } >> "${GITHUB_ENV}"
 
-      - name: Verify google-services.json is present
+      - name: Prepare google-services.json (From Secret, Base64, or Repo)
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ ! -s app/google-services.json ]; then
-            echo "::error::app/google-services.json is missing or empty. Commit app/google-services.json before building release."
+          set -euo pipefail
+          TARGET_FILE="app/google-services.json"
+          GENERATED_GS="false"
+
+          if [ -n "${GOOGLE_SERVICES_JSON_BASE64}" ]; then
+            echo "Decoding app/google-services.json from GOOGLE_SERVICES_JSON_BASE64 secret..."
+            printf '%s' "${GOOGLE_SERVICES_JSON_BASE64}" | tr -d '[:space:]' | base64 --decode > "${TARGET_FILE}"
+            GENERATED_GS="true"
+          elif [ -n "${GOOGLE_SERVICES_JSON}" ]; then
+            echo "Writing app/google-services.json from GOOGLE_SERVICES_JSON secret..."
+            printf '%s\n' "${GOOGLE_SERVICES_JSON}" > "${TARGET_FILE}"
+            GENERATED_GS="true"
+          elif [ -s "${TARGET_FILE}" ]; then
+            echo "Using committed app/google-services.json from repository."
+          elif [ -s "app/google-services.json.base64" ]; then
+            echo "Decoding app/google-services.json from app/google-services.json.base64..."
+            tr -d '[:space:]' < app/google-services.json.base64 | base64 --decode > "${TARGET_FILE}"
+            GENERATED_GS="true"
+          elif [ -s "google-services.json.base64" ]; then
+            echo "Decoding app/google-services.json from google-services.json.base64..."
+            tr -d '[:space:]' < google-services.json.base64 | base64 --decode > "${TARGET_FILE}"
+            GENERATED_GS="true"
+          elif [ -s "google-services.json" ]; then
+            echo "Copying root google-services.json to app/google-services.json..."
+            cp google-services.json "${TARGET_FILE}"
+            GENERATED_GS="true"
+          else
+            echo "::error::app/google-services.json is missing! Add GitHub Secret GOOGLE_SERVICES_JSON_BASE64 (base64 of google-services.json) or GOOGLE_SERVICES_JSON (raw JSON), or commit app/google-services.json."
             exit 1
           fi
+
+          if [ ! -s "${TARGET_FILE}" ]; then
+            echo "::error::app/google-services.json is empty after preparation."
+            exit 1
+          fi
+
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1], encoding="utf-8-sig")); assert "project_info" in d and "client" in d, "Missing project_info/client"' "${TARGET_FILE}"
+          echo "GENERATED_GOOGLE_SERVICES=${GENERATED_GS}" >> "${GITHUB_ENV}"
+          echo "Verified valid app/google-services.json."
 
       - name: Run Unit Tests (Optional, skipped by default)
         if: ${{ inputs.run_tests == true }}
@@ -150,11 +188,14 @@ jobs:
 
           ls -lh "${AAB_FILE}" "${APK_FILE}"
 
-      - name: Clean Up Temporary Keystores
+      - name: Clean Up Temporary Secrets & Keystores
         if: always()
         run: |
           rm -f "${RUNNER_TEMP}/release.keystore"
           rm -f debug.keystore
+          if [ "${GENERATED_GOOGLE_SERVICES:-false}" = "true" ]; then
+            rm -f app/google-services.json
+          fi
 
       - name: Upload Signed Release Artifacts
         if: success()
