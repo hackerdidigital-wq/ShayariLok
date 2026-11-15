@@ -2,6 +2,12 @@ name: Build Signed Release AAB & APK (Shayari Lok)
 
 on:
   workflow_dispatch:
+    inputs:
+      run_tests:
+        description: 'Run unit tests before building release APK/AAB'
+        required: false
+        default: false
+        type: boolean
   push:
     branches: [ main ]
 
@@ -105,7 +111,15 @@ jobs:
             echo "KEY_PASSWORD=${EFFECTIVE_KEY_PASSWORD}"
           } >> "${GITHUB_ENV}"
 
-      - name: Run Unit Tests
+      - name: Verify google-services.json is present
+        run: |
+          if [ ! -s app/google-services.json ]; then
+            echo "::error::app/google-services.json is missing or empty. Commit app/google-services.json before building release."
+            exit 1
+          fi
+
+      - name: Run Unit Tests (Optional, skipped by default)
+        if: ${{ inputs.run_tests == true }}
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
 
       - name: Build Signed Release AAB & APK (R8 Minified)

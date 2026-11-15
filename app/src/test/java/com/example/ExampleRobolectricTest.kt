@@ -12,11 +12,12 @@ import com.example.ui.ShayariScreenState
 import com.example.ui.ShayariViewModel
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -26,6 +27,29 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class ExampleRobolectricTest {
+
+  @Before
+  fun setUp() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    app.getSharedPreferences("shayari_lok_prefs", Context.MODE_PRIVATE).edit().clear().commit()
+  }
+
+  @After
+  fun tearDown() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    app.getSharedPreferences("shayari_lok_prefs", Context.MODE_PRIVATE).edit().clear().commit()
+  }
+
+  private fun setNetworkOffline(app: Application) {
+    val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    val shadowCm = Shadows.shadowOf(cm)
+    shadowCm.setDefaultNetworkActive(false)
+    @Suppress("DEPRECATION")
+    shadowCm.setActiveNetworkInfo(null)
+    cm.activeNetwork?.let { network ->
+      shadowCm.setNetworkCapabilities(network, null)
+    }
+  }
 
   @Test
   fun `app_name matches Shayari Lok`() {
@@ -67,6 +91,7 @@ class ExampleRobolectricTest {
       )
       .commit()
 
+    setNetworkOffline(app)
     val viewModel = ShayariViewModel(app)
     val state = viewModel.uiState.value.screenState
     assertTrue(state is ShayariScreenState.Maintenance)
@@ -80,11 +105,7 @@ class ExampleRobolectricTest {
   @Test
   fun `offline state triggers clean dialog while keeping shayari state intact and retry retries cleanly`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
-    val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    val shadowCm = Shadows.shadowOf(cm)
-    shadowCm.setDefaultNetworkActive(false)
-    @Suppress("DEPRECATION")
-    shadowCm.setActiveNetworkInfo(null)
+    setNetworkOffline(app)
 
     val viewModel = ShayariViewModel(app)
     val initialState = viewModel.uiState.value
@@ -310,6 +331,7 @@ class ExampleRobolectricTest {
   @Test
   fun `copied snackbar message and initial splash state are configured`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
+    setNetworkOffline(app)
     assertEquals("Copied Successfully!", app.getString(R.string.copied_snackbar))
 
     val viewModel = ShayariViewModel(app)
