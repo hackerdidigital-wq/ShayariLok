@@ -317,10 +317,10 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `device handle auto-generates valid deterministic @SL_XXXX id`() {
-    val app = ApplicationProvider.getApplicationContext<Application>()
-    val first = com.example.data.DeviceIdentityHelper.getOrCreateDeviceHandle(app)
-    val second = com.example.data.DeviceIdentityHelper.getOrCreateDeviceHandle(app)
+  fun `buildHandleFromUid produces deterministic @SL_XXXX handle from Google UID`() {
+    val uid = "G7xKp92LzQ8sT1vN"
+    val first = com.example.data.SocialRepository.buildHandleFromUid(uid)
+    val second = com.example.data.SocialRepository.buildHandleFromUid(uid)
     assertTrue(first.matches(Regex("^@SL_\\d{4}$")))
     assertEquals(first, second)
   }
@@ -328,230 +328,45 @@ class ExampleRobolectricTest {
   @Test
   fun `social chat room id is deterministic regardless of participant order`() {
     assertEquals(
-      com.example.data.SocialRepository.buildChatRoomId("user_b", "user_a"),
-      com.example.data.SocialRepository.buildChatRoomId("user_a", "user_b"),
+      com.example.data.SocialRepository.buildChatRoomId("uid_b", "uid_a"),
+      com.example.data.SocialRepository.buildChatRoomId("uid_a", "uid_b"),
+    )
+    assertEquals(
+      "room_uid_a_uid_b",
+      com.example.data.SocialRepository.buildChatRoomId("uid_b", "uid_a"),
     )
   }
 
   @Test
-  fun `local Room social repository persists profile edits, follow, like, and 1-on-1 chat cleanly`() =
-    runTest {
-      val app = ApplicationProvider.getApplicationContext<Application>()
-      val db =
-        androidx.room.Room.inMemoryDatabaseBuilder(
-            app,
-            com.example.data.local.SocialDatabase::class.java,
-          )
-          .allowMainThreadQueries()
-          .build()
-      try {
-        val repo = com.example.data.SocialRepository(db.socialDao())
-        val selfUid = "local_sl_1024"
-        val selfProfile =
-          repo.ensureUserBootstrap(selfUid, "@SL_1024", "Aarav Local").getOrThrow()
-        assertEquals("@SL_1024", selfProfile.handle)
+  fun `PublicProfile and ChatMessage effective accessors normalize Firestore legacy fields`() {
+    val legacyProfile =
+      com.example.model.PublicProfile(
+        id = "doc_9001",
+        uid = "google_uid_9001",
+        username = "SL_9001",
+        displayName = "Rohan Shayar",
+        likesCount = 12L,
+        likesReceivedCount = 40L,
+      )
+    assertEquals("google_uid_9001", legacyProfile.effectiveUid)
+    assertEquals("@SL_9001", legacyProfile.effectiveHandle)
+    assertEquals(40L, legacyProfile.effectiveLikesCount)
 
-        repo.updateMyProfile(
-          selfUid = selfUid,
-          displayName = "Ravi Shayar",
-          city = "Varanasi",
-          address = "Dashashwamedh Road",
-          bio = "Kashi ki shayari",
-        ).getOrThrow()
+    val minimalProfile =
+      com.example.model.PublicProfile(
+        id = "AbCd1234",
+        displayName = "Aarav",
+      )
+    assertEquals("AbCd1234", minimalProfile.effectiveUid)
+    assertEquals("@SL_1234", minimalProfile.effectiveHandle)
 
-        val updatedSelf = repo.observeMyProfile(selfUid).firstOrNull()!!
-        assertEquals("Ravi Shayar", updatedSelf.displayName)
-        assertEquals("Varanasi", updatedSelf.city)
-
-        val friend =
-          repo.addFriendProfile("Neha Tiwari", "@SL_8899", "Prayagraj", "Sangam vibes")
-            .getOrThrow()
-        assertEquals("@SL_8899", friend.handle)
-
-        val followResult = repo.toggleFollow(updatedSelf, friend, currentlyFollowing = false).getOrThrow()
-        assertTrue(followResult)
-
-        val likeResult = repo.toggleProfileLike(updatedSelf, friend, currentlyLiked = false).getOrThrow()
-        assertTrue(likeResult)
-
-        val msgRes = repo.sendChatMessage(updatedSelf, friend, "Waah kya shayari hai! ❤️")
-        assertTrue(msgRes.isSuccess)
-        val chatId = com.example.data.SocialRepository.buildChatRoomId(selfUid, friend.userId)
-        val messages = repo.observeChatMessages(chatId).firstOrNull().orEmpty()
-        assertEquals(1, messages.size)
-        assertEquals("Waah kya shayari hai! ❤️", messages.first().text)
-      } finally {
-        db.close()
-      }
-    }
-
-  @Test
-  fun `FirestoreRestClient syncs appUsers, socialEdges, and chatRooms over HTTP REST endpoints`() =
-    runTest {
-      val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-      val recordedPaths = mutableListOf<String>()
-      var lastUpsertUserBody = ""
-      var lastEdgeMethodOverride = ""
-      var lastSentMsgBody = ""
-
-      server.createContext("/documents/appUsers") { exchange ->
-        val path = exchange.requestURI.path
-        recordedPaths += "${exchange.requestMethod}:$path"
-        if (exchange.requestMethod == "POST") {
-          lastUpsertUserBody = exchange.requestBody.bufferedReader(Charsets.UTF_8).use { it.readText() }
-          val okBytes = """{"name":"projects/p/databases/d/documents/appUsers/local_sl_7777"}""".toByteArray()
-          exchange.sendResponseHeaders(200, okBytes.size.toLong())
-          exchange.responseBody.use { it.write(okBytes) }
-        } else if (path.endsWith("/local_sl_7777")) {
-          val docJson =
-            """
-            {
-              "name": "projects/p/databases/d/documents/appUsers/local_sl_7777",
-              "fields": {
-                "uid": { "stringValue": "local_sl_7777" },
-                "displayName": { "stringValue": "Meera AdminSync" },
-                "handle": { "stringValue": "@SL_7777" },
-                "city": { "stringValue": "Pune" },
-                "isBlocked": { "booleanValue": true },
-                "blockReason": { "stringValue": "Spam alert" },
-                "followersCount": { "integerValue": "14" }
-              }
-            }
-            """.trimIndent().toByteArray()
-          exchange.sendResponseHeaders(200, docJson.size.toLong())
-          exchange.responseBody.use { it.write(docJson) }
-        } else {
-          val listJson =
-            """
-            {
-              "documents": [
-                {
-                  "name": "projects/p/databases/d/documents/appUsers/shayar_remote_9001",
-                  "fields": {
-                    "uid": { "stringValue": "shayar_remote_9001" },
-                    "displayName": { "stringValue": "Rohan Shayar" },
-                    "username": { "stringValue": "SL_9001" },
-                    "city": { "stringValue": "Mumbai" },
-                    "followersCount": { "integerValue": "25" },
-                    "likesReceivedCount": { "integerValue": "40" }
-                  }
-                }
-              ]
-            }
-            """.trimIndent().toByteArray()
-          exchange.sendResponseHeaders(200, listJson.size.toLong())
-          exchange.responseBody.use { it.write(listJson) }
-        }
-      }
-
-      server.createContext("/documents/socialEdges") { exchange ->
-        lastEdgeMethodOverride = exchange.requestHeaders.getFirst("X-HTTP-Method-Override").orEmpty()
-        recordedPaths += "${exchange.requestMethod}:${exchange.requestURI.path}"
-        val bytes = "{}".toByteArray()
-        exchange.sendResponseHeaders(200, bytes.size.toLong())
-        exchange.responseBody.use { it.write(bytes) }
-      }
-
-      server.createContext("/documents/chatRooms") { exchange ->
-        val path = exchange.requestURI.path
-        recordedPaths += "${exchange.requestMethod}:$path"
-        if (exchange.requestMethod == "POST" && path.endsWith("/messages")) {
-          lastSentMsgBody = exchange.requestBody.bufferedReader(Charsets.UTF_8).use { it.readText() }
-          val bytes = """{"name":"projects/p/databases/d/documents/chatRooms/r1/messages/m1"}""".toByteArray()
-          exchange.sendResponseHeaders(200, bytes.size.toLong())
-          exchange.responseBody.use { it.write(bytes) }
-        } else if (exchange.requestMethod == "POST") {
-          val bytes = "{}".toByteArray()
-          exchange.sendResponseHeaders(200, bytes.size.toLong())
-          exchange.responseBody.use { it.write(bytes) }
-        } else {
-          val msgsJson =
-            """
-            {
-              "documents": [
-                {
-                  "name": "projects/p/databases/d/documents/chatRooms/room_local_sl_7777_shayar_remote_9001/messages/m_admin",
-                  "fields": {
-                    "roomId": { "stringValue": "room_local_sl_7777_shayar_remote_9001" },
-                    "senderId": { "stringValue": "shayar_remote_9001" },
-                    "senderHandle": { "stringValue": "@SL_9001" },
-                    "receiverId": { "stringValue": "local_sl_7777" },
-                    "text": { "stringValue": "Admin panel se live reply! ❤️" }
-                  }
-                }
-              ]
-            }
-            """.trimIndent().toByteArray()
-          exchange.sendResponseHeaders(200, msgsJson.size.toLong())
-          exchange.responseBody.use { it.write(msgsJson) }
-        }
-      }
-
-      server.start()
-      try {
-        val port = server.address.port
-        val client =
-          com.example.data.remote.FirestoreRestClient("http://127.0.0.1:$port/documents")
-
-        val self =
-          com.example.model.PublicProfile(
-            id = "local_sl_7777",
-            userId = "local_sl_7777",
-            handle = "@SL_7777",
-            displayName = "Meera Local",
-            city = "Pune",
-          )
-        val partner =
-          com.example.model.PublicProfile(
-            id = "shayar_remote_9001",
-            userId = "shayar_remote_9001",
-            handle = "@SL_9001",
-            displayName = "Rohan Shayar",
-            city = "Mumbai",
-          )
-
-        assertTrue(client.upsertAppUser(self).isSuccess)
-        assertTrue(lastUpsertUserBody.contains("\"stringValue\":\"Meera Local\""))
-
-        val single = client.fetchSingleAppUser("local_sl_7777").getOrThrow()!!
-        assertTrue(single.isBlocked)
-        assertEquals("Spam alert", single.blockReason)
-        assertEquals(14L, single.followersCount)
-
-        val remoteUsers = client.fetchAppUsers().getOrThrow()
-        assertEquals(1, remoteUsers.size)
-        assertEquals("@SL_9001", remoteUsers.first().handle)
-        assertEquals(40L, remoteUsers.first().likesCount)
-
-        assertTrue(
-          client.upsertSocialEdge(
-            actorId = self.userId,
-            targetId = partner.userId,
-            actorName = self.displayName,
-            targetName = partner.displayName,
-            type = "follow",
-          ).isSuccess
-        )
-        assertEquals("PATCH", lastEdgeMethodOverride)
-
-        val roomId = com.example.data.SocialRepository.buildChatRoomId(self.userId, partner.userId)
-        assertTrue(
-          client.sendChatMessage(
-            roomId = roomId,
-            senderProfile = self,
-            receiverProfile = partner,
-            text = "Hello via REST ✨",
-            messageCountEstimate = 1L,
-          ).isSuccess
-        )
-        assertTrue(lastSentMsgBody.contains("Hello via REST"))
-
-        val fetchedMsgs = client.fetchRoomMessages(roomId).getOrThrow()
-        assertEquals(1, fetchedMsgs.size)
-        assertEquals("Admin panel se live reply! ❤️", fetchedMsgs.first().text)
-        assertTrue(recordedPaths.any { it.contains("/documents/chatRooms/$roomId/messages") })
-      } finally {
-        server.stop(0)
-      }
-    }
+    val msg =
+      com.example.model.ChatMessage(
+        id = "m1",
+        senderId = "uid_a",
+        receiverId = "uid_b",
+        text = "Waah!",
+      )
+    assertEquals("uid_b", msg.effectiveRecipientId)
+  }
 }

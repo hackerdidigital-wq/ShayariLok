@@ -77,10 +77,8 @@ fun SocialCommunityScreen(
   onToggleLike: (PublicProfile) -> Unit,
   onOpenChatWith: (PublicProfile) -> Unit,
   onOpenChatRoom: (ChatRoom) -> Unit,
-  onAddFriend: (name: String, handle: String, city: String, bio: String, onDone: () -> Unit) -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  var showAddFriendDialog by remember { mutableStateOf(false) }
 
   Column(
     modifier = modifier.fillMaxSize(),
@@ -149,14 +147,6 @@ fun SocialCommunityScreen(
             onClick = { onSelectFilter(CommunityFilter.CHATS) },
           )
         }
-        item {
-          CommunityFilterChip(
-            label = "+ Add Friend",
-            selected = false,
-            testTag = "add_friend_chip",
-            onClick = { showAddFriendDialog = true },
-          )
-        }
       }
     }
 
@@ -207,11 +197,11 @@ fun SocialCommunityScreen(
           verticalArrangement = Arrangement.spacedBy(10.dp),
           modifier = Modifier.widthIn(max = 720.dp).fillMaxSize(),
         ) {
-          items(users, key = { it.userId }) { user ->
+          items(users, key = { it.effectiveUid }) { user ->
             FriendProfileCard(
               user = user,
-              isFollowing = user.userId in uiState.followingIds,
-              isLiked = user.userId in uiState.likedProfileIds,
+              isFollowing = user.effectiveUid in uiState.followingIds,
+              isLiked = user.effectiveUid in uiState.likedProfileIds,
               onCardClick = { onInspectProfile(user) },
               onFollowClick = { onToggleFollow(user) },
               onLikeClick = { onToggleLike(user) },
@@ -228,22 +218,12 @@ fun SocialCommunityScreen(
   if (inspected != null) {
     UserProfileDetailDialog(
       user = inspected,
-      isFollowing = inspected.userId in uiState.followingIds,
-      isLiked = inspected.userId in uiState.likedProfileIds,
+      isFollowing = inspected.effectiveUid in uiState.followingIds,
+      isLiked = inspected.effectiveUid in uiState.likedProfileIds,
       onDismiss = onDismissProfileSheet,
       onToggleFollow = { onToggleFollow(inspected) },
       onToggleLike = { onToggleLike(inspected) },
       onStartChat = { onOpenChatWith(inspected) },
-    )
-  }
-
-  if (showAddFriendDialog) {
-    AddFriendDialog(
-      isBusy = uiState.isBusy,
-      onDismiss = { showAddFriendDialog = false },
-      onAdd = { name, handle, city, bio ->
-        onAddFriend(name, handle, city, bio) { showAddFriendDialog = false }
-      },
     )
   }
 }
@@ -298,7 +278,7 @@ private fun FriendProfileCard(
       Modifier.fillMaxWidth()
         .clip(RoundedCornerShape(20.dp))
         .clickable(onClick = onCardClick)
-        .testTag("friend_card_${user.userId}"),
+        .testTag("friend_card_${user.effectiveUid}"),
   ) {
     Column(modifier = Modifier.padding(14.dp)) {
       Row(
@@ -342,7 +322,7 @@ private fun FriendProfileCard(
               border = BorderStroke(0.8.dp, CrownGold.copy(alpha = 0.55f)),
             ) {
               Text(
-                text = user.handle,
+                text = user.effectiveHandle,
                 style = MaterialTheme.typography.labelSmall,
                 color = CrownGold,
                 fontWeight = FontWeight.Bold,
@@ -392,7 +372,7 @@ private fun FriendProfileCard(
         modifier = Modifier.fillMaxWidth(),
       ) {
         Text(
-          text = "${user.followersCount} Followers • ${user.likesCount} Likes",
+          text = "${user.followersCount} Followers • ${user.effectiveLikesCount} Likes",
           style = MaterialTheme.typography.labelSmall,
           color = Color(0xFFD2C4EB),
           modifier = Modifier.weight(1f),
@@ -408,7 +388,7 @@ private fun FriendProfileCard(
             ),
           contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
           modifier =
-            Modifier.minimumInteractiveComponentSize().testTag("like_user_${user.userId}"),
+            Modifier.minimumInteractiveComponentSize().testTag("like_user_${user.effectiveUid}"),
         ) {
           Icon(
             painter =
@@ -431,7 +411,7 @@ private fun FriendProfileCard(
             ),
           contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
           modifier =
-            Modifier.minimumInteractiveComponentSize().testTag("follow_user_${user.userId}"),
+            Modifier.minimumInteractiveComponentSize().testTag("follow_user_${user.effectiveUid}"),
         ) {
           Text(
             text = if (isFollowing) "Following" else "Follow",
@@ -450,7 +430,7 @@ private fun FriendProfileCard(
             ),
           contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
           modifier =
-            Modifier.minimumInteractiveComponentSize().testTag("chat_user_${user.userId}"),
+            Modifier.minimumInteractiveComponentSize().testTag("chat_user_${user.effectiveUid}"),
         ) {
           Icon(
             painter = painterResource(id = R.drawable.ic_chat),
@@ -542,109 +522,7 @@ fun ChatThreadPreviewCard(
   }
 }
 
-@Composable
-private fun AddFriendDialog(
-  isBusy: Boolean,
-  onDismiss: () -> Unit,
-  onAdd: (name: String, handle: String, city: String, bio: String) -> Unit,
-) {
-  var name by remember { mutableStateOf("") }
-  var handle by remember { mutableStateOf("@SL_") }
-  var city by remember { mutableStateOf("") }
-  var bio by remember { mutableStateOf("") }
 
-  AlertDialog(
-    onDismissRequest = { if (!isBusy) onDismiss() },
-    containerColor = DarkSurface,
-    shape = RoundedCornerShape(24.dp),
-    title = {
-      Text(text = "Add Friend Profile", color = Color.White, fontWeight = FontWeight.Bold)
-    },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(
-          value = name,
-          onValueChange = { if (it.length <= 60) name = it },
-          singleLine = true,
-          label = { Text("Friend Name") },
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = CrownGold,
-              unfocusedBorderColor = NeonVioletGlow.copy(alpha = 0.5f),
-              focusedTextColor = Color.White,
-              unfocusedTextColor = Color.White,
-              focusedLabelColor = CrownGold,
-              unfocusedLabelColor = Color(0xFFD2C4EB),
-            ),
-          modifier = Modifier.fillMaxWidth().testTag("add_friend_name_input"),
-        )
-        OutlinedTextField(
-          value = handle,
-          onValueChange = { if (it.length <= 16) handle = it },
-          singleLine = true,
-          label = { Text("Unique ID (e.g. @SL_7788)") },
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = CrownGold,
-              unfocusedBorderColor = NeonVioletGlow.copy(alpha = 0.5f),
-              focusedTextColor = Color.White,
-              unfocusedTextColor = Color.White,
-              focusedLabelColor = CrownGold,
-              unfocusedLabelColor = Color(0xFFD2C4EB),
-            ),
-          modifier = Modifier.fillMaxWidth().testTag("add_friend_handle_input"),
-        )
-        OutlinedTextField(
-          value = city,
-          onValueChange = { if (it.length <= 80) city = it },
-          singleLine = true,
-          label = { Text("City") },
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = CrownGold,
-              unfocusedBorderColor = NeonVioletGlow.copy(alpha = 0.5f),
-              focusedTextColor = Color.White,
-              unfocusedTextColor = Color.White,
-              focusedLabelColor = CrownGold,
-              unfocusedLabelColor = Color(0xFFD2C4EB),
-            ),
-          modifier = Modifier.fillMaxWidth().testTag("add_friend_city_input"),
-        )
-        OutlinedTextField(
-          value = bio,
-          onValueChange = { if (it.length <= 200) bio = it },
-          maxLines = 3,
-          label = { Text("Bio / Shayari") },
-          colors =
-            OutlinedTextFieldDefaults.colors(
-              focusedBorderColor = CrownGold,
-              unfocusedBorderColor = NeonVioletGlow.copy(alpha = 0.5f),
-              focusedTextColor = Color.White,
-              unfocusedTextColor = Color.White,
-              focusedLabelColor = CrownGold,
-              unfocusedLabelColor = Color(0xFFD2C4EB),
-            ),
-          modifier = Modifier.fillMaxWidth().testTag("add_friend_bio_input"),
-        )
-      }
-    },
-    confirmButton = {
-      Button(
-        onClick = { onAdd(name, handle, city, bio) },
-        enabled = !isBusy && name.isNotBlank(),
-        colors = ButtonDefaults.buttonColors(containerColor = BadgePink),
-        modifier = Modifier.minimumInteractiveComponentSize().testTag("save_friend_button"),
-      ) {
-        Text("Add Friend", color = Color.White)
-      }
-    },
-    dismissButton = {
-      TextButton(onClick = onDismiss, enabled = !isBusy) {
-        Text("Cancel", color = Color(0xFFD2C4EB))
-      }
-    },
-  )
-}
 
 @Composable
 private fun UserProfileDetailDialog(
@@ -688,7 +566,7 @@ private fun UserProfileDetailDialog(
           fontWeight = FontWeight.Bold,
         )
         Spacer(modifier = Modifier.height(4.dp))
-        Text(text = user.handle, color = CrownGold, style = MaterialTheme.typography.labelLarge)
+        Text(text = user.effectiveHandle, color = CrownGold, style = MaterialTheme.typography.labelLarge)
         if (user.city.isNotBlank()) {
           Spacer(modifier = Modifier.height(4.dp))
           Text(
@@ -719,7 +597,7 @@ private fun UserProfileDetailDialog(
         ) {
           ProfileStatColumn(label = "Followers", count = user.followersCount)
           ProfileStatColumn(label = "Following", count = user.followingCount)
-          ProfileStatColumn(label = "Likes", count = user.likesCount)
+          ProfileStatColumn(label = "Likes", count = user.effectiveLikesCount)
         }
       }
     },

@@ -67,6 +67,7 @@ fun MyProfileScreen(
   onUpdateProfile: (name: String, city: String, address: String, bio: String, onDone: () -> Unit) -> Unit,
   onOpenChatRoom: (ChatRoom) -> Unit,
   onOpenSettings: () -> Unit,
+  onSignOut: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
   var showEditDialog by remember { mutableStateOf(false) }
@@ -117,7 +118,17 @@ fun MyProfileScreen(
             textAlign = TextAlign.Center,
           )
 
-          Spacer(modifier = Modifier.height(6.dp))
+          if (uiState.userEmail.isNotBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+              text = uiState.userEmail,
+              style = MaterialTheme.typography.bodySmall,
+              color = Color(0xFFD2C4EB),
+              textAlign = TextAlign.Center,
+            )
+          }
+
+          Spacer(modifier = Modifier.height(8.dp))
 
           Surface(
             shape = RoundedCornerShape(50),
@@ -125,7 +136,7 @@ fun MyProfileScreen(
             border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.65f)),
             modifier =
               Modifier.clip(RoundedCornerShape(50))
-                .clickable { onCopyHandle(profile.handle) }
+                .clickable { onCopyHandle(profile.effectiveHandle) }
                 .minimumInteractiveComponentSize()
                 .testTag("copy_my_handle_button"),
           ) {
@@ -134,7 +145,7 @@ fun MyProfileScreen(
               modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
             ) {
               Text(
-                text = profile.handle,
+                text = profile.effectiveHandle,
                 style = MaterialTheme.typography.labelLarge,
                 color = CrownGold,
                 fontWeight = FontWeight.ExtraBold,
@@ -195,7 +206,7 @@ fun MyProfileScreen(
             ) {
               LiveStatPill(label = "Followers", count = profile.followersCount)
               LiveStatPill(label = "Following", count = profile.followingCount)
-              LiveStatPill(label = "Likes", count = profile.likesCount)
+              LiveStatPill(label = "Likes", count = profile.effectiveLikesCount)
             }
           }
 
@@ -235,6 +246,24 @@ fun MyProfileScreen(
                 modifier = Modifier.size(18.dp),
               )
             }
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
+
+          OutlinedButton(
+            onClick = onSignOut,
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, NeonPink.copy(alpha = 0.55f)),
+            modifier =
+              Modifier.fillMaxWidth()
+                .minimumInteractiveComponentSize()
+                .testTag("sign_out_button"),
+          ) {
+            Text(
+              text = "Sign Out",
+              color = Color(0xFFFFB6CE),
+              fontWeight = FontWeight.SemiBold,
+            )
           }
         }
       }

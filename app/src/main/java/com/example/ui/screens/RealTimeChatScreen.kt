@@ -164,9 +164,9 @@ fun RealTimeChatScreen(
             Text(
               text =
                 if (partner.city.isNotBlank()) {
-                  "${partner.handle} • ${partner.city}"
+                  "${partner.effectiveHandle} • ${partner.city}"
                 } else {
-                  partner.handle
+                  partner.effectiveHandle
                 },
               style = MaterialTheme.typography.labelSmall,
               color = CrownGold,

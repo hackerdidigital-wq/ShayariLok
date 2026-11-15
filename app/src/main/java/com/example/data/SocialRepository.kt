@@ -1,395 +1,314 @@
 package com.example.data
 
 import android.content.Context
-import com.example.data.local.ChatMessageEntity
-import com.example.data.local.ChatRoomEntity
-import com.example.data.local.SocialDao
-import com.example.data.local.SocialDatabase
-import com.example.data.local.SocialNotificationEntity
-import com.example.data.local.UserProfileEntity
-import com.example.data.remote.FirestoreRestClient
+import com.example.R
 import com.example.model.ChatMessage
 import com.example.model.ChatRoom
 import com.example.model.PublicProfile
 import com.example.model.SocialNotification
+import com.google.firebase.Firebase
+import com.google.firebase.Timestamp
+import com.google.firebase.auth.auth
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.tasks.await
 
-class SocialRepository(
-  private val dao: SocialDao,
-  private val restClient: FirestoreRestClient = FirestoreRestClient(),
-) {
+class SocialRepository(private val db: FirebaseFirestore) {
 
   constructor(context: Context) : this(
-    dao = SocialDatabase.getInstance(context).socialDao(),
-    restClient = FirestoreRestClient(),
+    FirebaseFirestore.getInstance(
+      context.applicationContext.getString(R.string.firestore_database_id)
+    )
   )
 
-  fun observeMyProfile(selfUid: String): Flow<PublicProfile?> =
-    dao.observeSelfProfile(selfUid).map { it?.toModel() }
+  private val auth = Firebase.auth
 
-  fun observeDiscoverableProfiles(): Flow<List<PublicProfile>> =
-    dao.observeCommunityProfiles().map { list -> list.map { it.toModel() } }
+  private fun requireUserId(): String =
+    auth.currentUser?.uid
+      ?: throw IllegalStateException("User must sign in with Google before accessing Firestore.")
 
-  fun observeMyFollowingIds(): Flow<Set<String>> =
-    dao.observeCommunityProfiles().map { list ->
-      list.filter { it.isFollowing }.map { it.userId }.toSet()
-    }
+  fun observeMyProfile(selfUid: String): Flow<PublicProfile?> = flow {
+    requireUserId()
+    val docRef = db.collection("appUsers").document(selfUid)
+    emitAll(
+      docRef
+        .snapshots()
+        .map { snapshot ->
+          if (!snapshot.exists()) null else snapshot.toPublicProfile()
+        }
+        .catch { cause ->
+          if (cause is CancellationException) throw cause
+          handleFirestoreError(cause, OperationType.GET, docRef.path)
+          throw cause
+        }
+    )
+  }
 
-  fun observeMyLikedProfileIds(): Flow<Set<String>> =
-    dao.observeCommunityProfiles().map { list ->
-      list.filter { it.isLiked }.map { it.userId }.toSet()
-    }
+  fun observeDiscoverableProfiles(): Flow<List<PublicProfile>> = flow {
+    requireUserId()
+    val path = "appUsers"
+    emitAll(
+      db.collection(path)
+        .limit(100)
+        .snapshots()
+        .map { snapshot ->
+          snapshot.documents
+            .mapNotNull { it.toPublicProfile() }
+            .sortedByDescending { it.updatedAtMillis }
+        }
+        .catch { cause ->
+          if (cause is CancellationException) throw cause
+          handleFirestoreError(cause, OperationType.LIST, path)
+          throw cause
+        }
+    )
+  }
 
-  fun observeMyChats(): Flow<List<ChatRoom>> =
-    dao.observeChatRooms().map { rooms -> rooms.map { it.toModel() } }
+  fun observeMyFollowingIds(selfUid: String): Flow<Set<String>> = flow {
+    requireUserId()
+    val path = "appUsers/$selfUid/following"
+    emitAll(
+      db.collection("appUsers")
+        .document(selfUid)
+        .collection("following")
+        .snapshots()
+        .map { snapshot -> snapshot.documents.map { it.id }.toSet() }
+        .catch { cause ->
+          if (cause is CancellationException) throw cause
+          handleFirestoreError(cause, OperationType.LIST, path)
+          throw cause
+        }
+    )
+  }
 
-  fun observeChatMessages(chatId: String): Flow<List<ChatMessage>> =
-    dao.observeMessages(chatId).map { msgs -> msgs.map { it.toModel() } }
+  fun observeMyLikedProfileIds(selfUid: String): Flow<Set<String>> = flow {
+    requireUserId()
+    val path = "appUsers/$selfUid/likes"
+    emitAll(
+      db.collection("appUsers")
+        .document(selfUid)
+        .collection("likes")
+        .snapshots()
+        .map { snapshot -> snapshot.documents.map { it.id }.toSet() }
+        .catch { cause ->
+          if (cause is CancellationException) throw cause
+          handleFirestoreError(cause, OperationType.LIST, path)
+          throw cause
+        }
+    )
+  }
 
-  fun observeSocialNotifications(): Flow<List<SocialNotification>> =
-    dao.observeNotifications().map { list -> list.map { it.toModel() } }
+  fun observeMyChats(selfUid: String): Flow<List<ChatRoom>> = flow {
+    requireUserId()
+    val path = "chatRooms"
+    emitAll(
+      db.collection(path)
+        .whereArrayContains("participantIds", selfUid)
+        .snapshots()
+        .map { snapshot ->
+          snapshot.documents
+            .map { doc -> doc.toChatRoom(selfUid) }
+            .sortedByDescending { it.updatedAtMillis }
+        }
+        .catch { cause ->
+          if (cause is CancellationException) throw cause
+          handleFirestoreError(cause, OperationType.LIST, path)
+          throw cause
+        }
+    )
+  }
 
-  suspend fun ensureUserBootstrap(
-    selfUid: String,
+  fun observeChatMessages(chatId: String): Flow<List<ChatMessage>> = flow {
+    requireUserId()
+    val path = "chatRooms/$chatId/messages"
+    emitAll(
+      db.collection("chatRooms")
+        .document(chatId)
+        .collection("messages")
+        .orderBy("createdAt", Query.Direction.ASCENDING)
+        .limit(150)
+        .snapshots()
+        .map { snapshot ->
+          snapshot.documents.mapNotNull { it.toChatMessage(chatId) }
+        }
+        .catch { cause ->
+          if (cause is CancellationException) throw cause
+          handleFirestoreError(cause, OperationType.LIST, path)
+          throw cause
+        }
+    )
+  }
+
+  fun observeSocialNotifications(selfUid: String): Flow<List<SocialNotification>> = flow {
+    requireUserId()
+    val path = "appUsers/$selfUid/notifications"
+    emitAll(
+      db.collection("appUsers")
+        .document(selfUid)
+        .collection("notifications")
+        .orderBy("createdAt", Query.Direction.DESCENDING)
+        .limit(50)
+        .snapshots()
+        .map { snapshot ->
+          snapshot.documents.map { it.toSocialNotification(selfUid) }
+        }
+        .catch { cause ->
+          if (cause is CancellationException) throw cause
+          handleFirestoreError(cause, OperationType.LIST, path)
+          throw cause
+        }
+    )
+  }
+
+  suspend fun syncGoogleUserOnLogin(
     defaultHandle: String,
     defaultDisplayName: String,
-  ): Result<PublicProfile> =
-    try {
-      val now = System.currentTimeMillis()
-      val existingSelf = dao.getProfileById(selfUid)
-      if (existingSelf == null) {
-        val safeHandle = defaultHandle.trim().ifBlank { "@SL_1001" }.take(32)
-        val safeName = defaultDisplayName.trim().ifBlank { "Shayari Lover" }.take(60)
-        val selfEntity =
-          UserProfileEntity(
-            userId = selfUid,
-            handle = safeHandle,
-            displayName = safeName,
-            city = "",
-            address = "",
-            bio = "Shayari Lok Member",
-            followersCount = 0L,
-            followingCount = 0L,
-            likesCount = 0L,
-            isSelf = true,
-            isFollowing = false,
-            isLiked = false,
-            isBlocked = false,
-            blockReason = "",
-            createdAtMillis = now,
-            updatedAtMillis = now,
-          )
-        dao.upsertProfile(selfEntity)
+    email: String,
+    photoUrl: String,
+  ): Result<PublicProfile> {
+    val uid =
+      try {
+        requireUserId()
+      } catch (e: Exception) {
+        return Result.failure(e)
       }
 
-      if (dao.countCommunityProfiles() == 0) {
-        seedInitialCommunity(selfUid = selfUid, now = now)
-      }
+    val safeHandle = defaultHandle.trim().ifBlank { "@SL_${uid.takeLast(4).uppercase()}" }.take(32)
+    val cleanUsername = safeHandle.removePrefix("@").ifBlank { "SL_${uid.takeLast(4).uppercase()}" }
+    val safeName = defaultDisplayName.trim().ifBlank { "Shayari Lover" }.take(60)
+    val safeEmail = email.trim().take(160)
+    val safePhoto = photoUrl.trim().take(500)
 
-      val loaded =
-        dao.getProfileById(selfUid)?.toModel()
+    val privateUserRef = db.collection("users").document(uid)
+    val publicUserRef = db.collection("appUsers").document(uid)
+
+    return try {
+      val existingPrivate = privateUserRef.get().await()
+      val privatePayload =
+        buildMap<String, Any> {
+          put("uid", uid)
+          put("displayName", safeName)
+          put("email", safeEmail)
+          if (safePhoto.isNotEmpty()) put("photoUrl", safePhoto)
+          put("handle", safeHandle)
+          if (!existingPrivate.exists()) {
+            put("createdAt", FieldValue.serverTimestamp())
+          }
+          put("updatedAt", FieldValue.serverTimestamp())
+        }
+      privateUserRef.set(privatePayload, SetOptions.merge()).await()
+
+      val existingPublic = publicUserRef.get().await()
+      val publicPayload =
+        if (!existingPublic.exists()) {
+          buildMap<String, Any> {
+            put("uid", uid)
+            put("userId", uid)
+            put("displayName", safeName)
+            put("username", cleanUsername)
+            put("handle", safeHandle)
+            if (safePhoto.isNotEmpty()) put("photoUrl", safePhoto)
+            put("city", "")
+            put("bio", "Shayari Lok Member")
+            put("isOnline", true)
+            put("isBlocked", false)
+            put("blockReason", "")
+            put("followersCount", 0L)
+            put("followingCount", 0L)
+            put("likesReceivedCount", 0L)
+            put("createdAt", FieldValue.serverTimestamp())
+            put("updatedAt", FieldValue.serverTimestamp())
+          }
+        } else {
+          buildMap<String, Any> {
+            val currentName = existingPublic.getString("displayName").orEmpty()
+            if (currentName.isBlank()) {
+              put("displayName", safeName)
+            }
+            if (safePhoto.isNotEmpty()) put("photoUrl", safePhoto)
+            put("isOnline", true)
+            put("updatedAt", FieldValue.serverTimestamp())
+          }
+        }
+      publicUserRef.set(publicPayload, SetOptions.merge()).await()
+
+      val freshSnapshot = publicUserRef.get().await()
+      val profile =
+        freshSnapshot.toPublicProfile()
           ?: PublicProfile(
-            id = selfUid,
-            userId = selfUid,
-            handle = defaultHandle,
-            displayName = defaultDisplayName,
+            id = uid,
+            userId = uid,
+            uid = uid,
+            handle = safeHandle,
+            username = cleanUsername,
+            displayName = safeName,
+            photoUrl = safePhoto,
           )
-
-      // Push local profile directly to /appUsers via Firestore REST API (non-fatal silent fallback)
-      restClient.upsertAppUser(loaded)
-      syncRemoteUsersAndBlockStatus(selfUid)
-
-      val refreshed = dao.getProfileById(selfUid)?.toModel() ?: loaded
-      Result.success(refreshed)
+      Result.success(profile)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.WRITE, publicUserRef.path)
       Result.failure(e)
     }
-
-  suspend fun syncRemoteUsersAndBlockStatus(selfUid: String) {
-    try {
-      restClient.fetchSingleAppUser(selfUid).onSuccess { remoteSelf ->
-        if (remoteSelf != null) {
-          dao.updateBlockStatus(
-            uid = selfUid,
-            isBlocked = remoteSelf.isBlocked,
-            blockReason = remoteSelf.blockReason,
-            updatedAt = System.currentTimeMillis(),
-          )
-        }
-      }
-
-      restClient.fetchAppUsers().onSuccess { remoteUsers ->
-        for (remoteUser in remoteUsers) {
-          if (remoteUser.userId == selfUid) continue
-          val existing = dao.getProfileById(remoteUser.userId)
-          val entity =
-            UserProfileEntity(
-              userId = remoteUser.userId,
-              handle = remoteUser.handle,
-              displayName = remoteUser.displayName,
-              city = remoteUser.city,
-              address = remoteUser.address,
-              bio = remoteUser.bio,
-              followersCount = maxOf(remoteUser.followersCount, existing?.followersCount ?: 0L),
-              followingCount = maxOf(remoteUser.followingCount, existing?.followingCount ?: 0L),
-              likesCount = maxOf(remoteUser.likesCount, existing?.likesCount ?: 0L),
-              isSelf = false,
-              isFollowing = existing?.isFollowing ?: false,
-              isLiked = existing?.isLiked ?: false,
-              isBlocked = remoteUser.isBlocked,
-              blockReason = remoteUser.blockReason,
-              createdAtMillis =
-                remoteUser.createdAtMillis.takeIf { it > 0L }
-                  ?: existing?.createdAtMillis
-                  ?: System.currentTimeMillis(),
-              updatedAtMillis = System.currentTimeMillis(),
-            )
-          dao.upsertProfile(entity)
-        }
-      }
-    } catch (e: CancellationException) {
-      throw e
-    } catch (_: Exception) {
-      // Keep Room local cache active seamlessly
-    }
-  }
-
-  suspend fun syncRemoteRoomMessages(selfUid: String, roomId: String) {
-    try {
-      restClient.fetchRoomMessages(roomId).onSuccess { remoteMsgs ->
-        val localExisting = dao.getRoomMessagesSnapshot(roomId)
-        val existingSignatures =
-          localExisting.map {
-            it.remoteDocId.ifBlank { "${it.senderId}:${it.text}" }
-          }.toSet()
-
-        for (msg in remoteMsgs) {
-          val docKey = msg.id
-          val contentKey = "${msg.senderId}:${msg.text}"
-          if (docKey !in existingSignatures && contentKey !in existingSignatures) {
-            dao.insertMessage(
-              ChatMessageEntity(
-                remoteDocId = docKey,
-                roomId = roomId,
-                senderId = msg.senderId,
-                senderHandle = msg.senderHandle.ifBlank { "@SL_USER" },
-                recipientId = msg.recipientId,
-                text = msg.text,
-                isRead = msg.senderId == selfUid,
-                createdAtMillis = msg.createdAtMillis,
-              )
-            )
-          }
-        }
-      }
-    } catch (e: CancellationException) {
-      throw e
-    } catch (_: Exception) {
-      // Silent fallback to local SQLite
-    }
-  }
-
-  private suspend fun seedInitialCommunity(selfUid: String, now: Long) {
-    val seedUsers =
-      listOf(
-        UserProfileEntity(
-          userId = "shayar_aarav_1024",
-          handle = "@SL_1024",
-          displayName = "Aarav Verma",
-          city = "Lucknow",
-          address = "Hazratganj, Lucknow",
-          bio = "दिल के जज़्बात और मोहब्बत की शायरी लिखता हूँ ✨",
-          followersCount = 128L,
-          followingCount = 34L,
-          likesCount = 240L,
-          isSelf = false,
-          isFollowing = false,
-          isLiked = false,
-          createdAtMillis = now - 60_000L * 50,
-          updatedAtMillis = now - 60_000L * 50,
-        ),
-        UserProfileEntity(
-          userId = "shayar_ananya_2048",
-          handle = "@SL_2048",
-          displayName = "Ananya Sharma",
-          city = "Jaipur",
-          address = "Malviya Nagar, Jaipur",
-          bio = "ख़ामोश लफ़्ज़ों में गहरी बातें लिखने का शौक़ 🌹",
-          followersCount = 96L,
-          followingCount = 21L,
-          likesCount = 185L,
-          isSelf = false,
-          isFollowing = false,
-          isLiked = false,
-          createdAtMillis = now - 60_000L * 40,
-          updatedAtMillis = now - 60_000L * 40,
-        ),
-        UserProfileEntity(
-          userId = "shayar_kabir_3096",
-          handle = "@SL_3096",
-          displayName = "Kabir Khan",
-          city = "Delhi",
-          address = "Connaught Place, New Delhi",
-          bio = "दोस्ती, मोटिवेशन और शायरी — हर शाम एक नया शेर 🔥",
-          followersCount = 154L,
-          followingCount = 48L,
-          likesCount = 310L,
-          isSelf = false,
-          isFollowing = false,
-          isLiked = false,
-          createdAtMillis = now - 60_000L * 30,
-          updatedAtMillis = now - 60_000L * 30,
-        ),
-        UserProfileEntity(
-          userId = "shayar_meera_4112",
-          handle = "@SL_4112",
-          displayName = "Meera Joshi",
-          city = "Indore",
-          address = "Vijay Nagar, Indore",
-          bio = "इश्क़, यादें और बरसात की कविताएँ 💫",
-          followersCount = 72L,
-          followingCount = 19L,
-          likesCount = 142L,
-          isSelf = false,
-          isFollowing = false,
-          isLiked = false,
-          createdAtMillis = now - 60_000L * 20,
-          updatedAtMillis = now - 60_000L * 20,
-        ),
-        UserProfileEntity(
-          userId = "shayar_zoya_5220",
-          handle = "@SL_5220",
-          displayName = "Zoya Mirza",
-          city = "Bhopal",
-          address = "Arera Colony, Bhopal",
-          bio = "अल्फ़ाज़ जो सीधे दिल को छू जाएं ❤️",
-          followersCount = 112L,
-          followingCount = 29L,
-          likesCount = 215L,
-          isSelf = false,
-          isFollowing = false,
-          isLiked = false,
-          createdAtMillis = now - 60_000L * 10,
-          updatedAtMillis = now - 60_000L * 10,
-        ),
-      )
-    dao.insertProfilesIgnore(seedUsers)
-
-    val welcomeRoomId = buildChatRoomId(selfUid, "shayar_aarav_1024")
-    val welcomeMessage = "Shayari Lok में स्वागत है दोस्त! आपकी पसंदीदा शायरी कौनसी है? ✨"
-    dao.upsertChatRoom(
-      ChatRoomEntity(
-        roomId = welcomeRoomId,
-        partnerId = "shayar_aarav_1024",
-        partnerHandle = "@SL_1024",
-        partnerName = "Aarav Verma",
-        lastMessage = welcomeMessage,
-        lastSenderId = "shayar_aarav_1024",
-        updatedAtMillis = now - 120_000L,
-      )
-    )
-    dao.insertMessage(
-      ChatMessageEntity(
-        remoteDocId = "welcome_${welcomeRoomId}",
-        roomId = welcomeRoomId,
-        senderId = "shayar_aarav_1024",
-        senderHandle = "@SL_1024",
-        recipientId = selfUid,
-        text = welcomeMessage,
-        isRead = false,
-        createdAtMillis = now - 120_000L,
-      )
-    )
-    dao.insertNotification(
-      SocialNotificationEntity(
-        recipientId = selfUid,
-        senderId = "shayar_aarav_1024",
-        senderHandle = "@SL_1024",
-        senderName = "Aarav Verma",
-        type = "message",
-        previewText = welcomeMessage,
-        chatRoomId = welcomeRoomId,
-        isRead = false,
-        createdAtMillis = now - 120_000L,
-      )
-    )
   }
 
   suspend fun updateMyProfile(
-    selfUid: String,
     displayName: String,
     city: String,
     address: String,
     bio: String,
   ): Result<Unit> {
+    val uid =
+      try {
+        requireUserId()
+      } catch (e: Exception) {
+        return Result.failure(e)
+      }
     val cleanName = displayName.trim().take(60)
     if (cleanName.isBlank()) {
       return Result.failure(IllegalArgumentException("Name cannot be empty"))
     }
+    val publicRef = db.collection("appUsers").document(uid)
+    val privateRef = db.collection("users").document(uid)
+
     return try {
-      dao.updateSelfProfile(
-        uid = selfUid,
-        displayName = cleanName,
-        city = city.trim().take(80),
-        address = address.trim().take(160),
-        bio = bio.trim().take(220),
-        updatedAt = System.currentTimeMillis(),
+      val batch = db.batch()
+      batch.set(
+        publicRef,
+        mapOf(
+          "displayName" to cleanName,
+          "city" to city.trim().take(80),
+          "bio" to bio.trim().take(220),
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+        SetOptions.merge(),
       )
-      dao.getProfileById(selfUid)?.toModel()?.let { updated ->
-        restClient.upsertAppUser(updated)
-      }
+      batch.set(
+        privateRef,
+        mapOf(
+          "displayName" to cleanName,
+          "address" to address.trim().take(160),
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+        SetOptions.merge(),
+      )
+      batch.commit().await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
-      Result.failure(e)
-    }
-  }
-
-  suspend fun addFriendProfile(
-    displayName: String,
-    rawHandle: String,
-    city: String,
-    bio: String,
-  ): Result<PublicProfile> {
-    val cleanName = displayName.trim().take(60)
-    if (cleanName.isBlank()) {
-      return Result.failure(IllegalArgumentException("Friend name cannot be empty"))
-    }
-    val digits = rawHandle.filter { it.isDigit() }.ifBlank { (6000..9999).random().toString() }
-    val normalizedHandle = "@SL_${digits.take(6)}"
-    val uid =
-      "local_friend_${normalizedHandle.lowercase().replace("@", "")}_${System.currentTimeMillis() % 10000}"
-    val now = System.currentTimeMillis()
-    val entity =
-      UserProfileEntity(
-        userId = uid,
-        handle = normalizedHandle,
-        displayName = cleanName,
-        city = city.trim().take(80),
-        address = city.trim().take(160),
-        bio = bio.trim().ifBlank { "Shayari Lok Friend" }.take(220),
-        followersCount = 1L,
-        followingCount = 0L,
-        likesCount = 0L,
-        isSelf = false,
-        isFollowing = false,
-        isLiked = false,
-        createdAtMillis = now,
-        updatedAtMillis = now,
-      )
-    return try {
-      dao.upsertProfile(entity)
-      val model = entity.toModel()
-      restClient.upsertAppUser(model)
-      Result.success(model)
-    } catch (e: CancellationException) {
-      throw e
-    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.UPDATE, publicRef.path)
       Result.failure(e)
     }
   }
@@ -399,45 +318,77 @@ class SocialRepository(
     targetProfile: PublicProfile,
     currentlyFollowing: Boolean,
   ): Result<Boolean> {
-    if (selfProfile.userId == targetProfile.userId) {
-      return Result.failure(IllegalArgumentException("Cannot follow yourself"))
+    val uid =
+      try {
+        requireUserId()
+      } catch (e: Exception) {
+        return Result.failure(e)
+      }
+    val targetUid = targetProfile.effectiveUid
+    if (uid == targetUid || targetUid.isBlank()) {
+      return Result.failure(IllegalArgumentException("Cannot follow this profile"))
     }
+
+    val followSubDoc = db.collection("appUsers").document(uid).collection("following").document(targetUid)
+    val edgeId = "${uid}_follow_${targetUid}"
+    val edgeDoc = db.collection("socialEdges").document(edgeId)
+    val selfDoc = db.collection("appUsers").document(uid)
+    val targetDoc = db.collection("appUsers").document(targetUid)
+
     return try {
-      val now = System.currentTimeMillis()
       val nextState = !currentlyFollowing
       val delta = if (nextState) 1L else -1L
-      dao.updateTargetFollowing(
-        targetUid = targetProfile.userId,
-        isFollowing = nextState,
-        followersDelta = delta,
-        updatedAt = now,
-      )
-      dao.adjustSelfFollowingCount(
-        selfUid = selfProfile.userId,
-        delta = delta,
-        updatedAt = now,
-      )
+      val batch = db.batch()
+
       if (nextState) {
-        restClient.upsertSocialEdge(
-          actorId = selfProfile.userId,
-          targetId = targetProfile.userId,
-          actorName = selfProfile.displayName,
-          targetName = targetProfile.displayName,
-          type = "follow",
+        batch.set(
+          followSubDoc,
+          mapOf(
+            "targetId" to targetUid,
+            "targetName" to targetProfile.displayName.take(100),
+            "targetHandle" to targetProfile.effectiveHandle.take(40),
+            "createdAt" to FieldValue.serverTimestamp(),
+          ),
+        )
+        batch.set(
+          edgeDoc,
+          mapOf(
+            "actorId" to uid,
+            "targetId" to targetUid,
+            "actorName" to selfProfile.displayName.take(100),
+            "targetName" to targetProfile.displayName.take(100),
+            "type" to "follow",
+            "createdAt" to FieldValue.serverTimestamp(),
+          ),
+        )
+        val notifDoc = db.collection("appUsers").document(targetUid).collection("notifications").document()
+        batch.set(
+          notifDoc,
+          mapOf(
+            "recipientId" to targetUid,
+            "senderId" to uid,
+            "senderHandle" to selfProfile.effectiveHandle.take(40),
+            "senderName" to selfProfile.displayName.take(100),
+            "type" to "follow",
+            "previewText" to "${selfProfile.displayName} started following you",
+            "chatId" to "",
+            "isRead" to false,
+            "createdAt" to FieldValue.serverTimestamp(),
+          ),
         )
       } else {
-        restClient.deleteSocialEdge(
-          actorId = selfProfile.userId,
-          targetId = targetProfile.userId,
-          type = "follow",
-        )
+        batch.delete(followSubDoc)
+        batch.delete(edgeDoc)
       }
-      dao.getProfileById(selfProfile.userId)?.toModel()?.let { restClient.upsertAppUser(it) }
-      dao.getProfileById(targetProfile.userId)?.toModel()?.let { restClient.upsertAppUser(it) }
+
+      batch.update(selfDoc, mapOf("followingCount" to FieldValue.increment(delta), "updatedAt" to FieldValue.serverTimestamp()))
+      batch.update(targetDoc, mapOf("followersCount" to FieldValue.increment(delta), "updatedAt" to FieldValue.serverTimestamp()))
+      batch.commit().await()
       Result.success(nextState)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.WRITE, edgeDoc.path)
       Result.failure(e)
     }
   }
@@ -447,39 +398,79 @@ class SocialRepository(
     targetProfile: PublicProfile,
     currentlyLiked: Boolean,
   ): Result<Boolean> {
-    if (selfProfile.userId == targetProfile.userId) {
-      return Result.failure(IllegalArgumentException("Cannot like your own profile"))
+    val uid =
+      try {
+        requireUserId()
+      } catch (e: Exception) {
+        return Result.failure(e)
+      }
+    val targetUid = targetProfile.effectiveUid
+    if (uid == targetUid || targetUid.isBlank()) {
+      return Result.failure(IllegalArgumentException("Cannot like this profile"))
     }
+
+    val likeSubDoc = db.collection("appUsers").document(uid).collection("likes").document(targetUid)
+    val edgeId = "${uid}_like_${targetUid}"
+    val edgeDoc = db.collection("socialEdges").document(edgeId)
+    val targetDoc = db.collection("appUsers").document(targetUid)
+
     return try {
-      val now = System.currentTimeMillis()
       val nextState = !currentlyLiked
       val delta = if (nextState) 1L else -1L
-      dao.updateTargetLike(
-        targetUid = targetProfile.userId,
-        isLiked = nextState,
-        likesDelta = delta,
-        updatedAt = now,
-      )
+      val batch = db.batch()
+
       if (nextState) {
-        restClient.upsertSocialEdge(
-          actorId = selfProfile.userId,
-          targetId = targetProfile.userId,
-          actorName = selfProfile.displayName,
-          targetName = targetProfile.displayName,
-          type = "like",
+        batch.set(
+          likeSubDoc,
+          mapOf(
+            "targetId" to targetUid,
+            "createdAt" to FieldValue.serverTimestamp(),
+          ),
+        )
+        batch.set(
+          edgeDoc,
+          mapOf(
+            "actorId" to uid,
+            "targetId" to targetUid,
+            "actorName" to selfProfile.displayName.take(100),
+            "targetName" to targetProfile.displayName.take(100),
+            "type" to "like",
+            "createdAt" to FieldValue.serverTimestamp(),
+          ),
+        )
+        val notifDoc = db.collection("appUsers").document(targetUid).collection("notifications").document()
+        batch.set(
+          notifDoc,
+          mapOf(
+            "recipientId" to targetUid,
+            "senderId" to uid,
+            "senderHandle" to selfProfile.effectiveHandle.take(40),
+            "senderName" to selfProfile.displayName.take(100),
+            "type" to "like",
+            "previewText" to "${selfProfile.displayName} liked your Shayari profile ❤️",
+            "chatId" to "",
+            "isRead" to false,
+            "createdAt" to FieldValue.serverTimestamp(),
+          ),
         )
       } else {
-        restClient.deleteSocialEdge(
-          actorId = selfProfile.userId,
-          targetId = targetProfile.userId,
-          type = "like",
-        )
+        batch.delete(likeSubDoc)
+        batch.delete(edgeDoc)
       }
-      dao.getProfileById(targetProfile.userId)?.toModel()?.let { restClient.upsertAppUser(it) }
+
+      batch.update(
+        targetDoc,
+        mapOf(
+          "likesReceivedCount" to FieldValue.increment(delta),
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+      )
+      batch.commit().await()
       Result.success(nextState)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.WRITE, edgeDoc.path)
       Result.failure(e)
     }
   }
@@ -489,6 +480,12 @@ class SocialRepository(
     targetProfile: PublicProfile,
     rawText: String,
   ): Result<String> {
+    val uid =
+      try {
+        requireUserId()
+      } catch (e: Exception) {
+        return Result.failure(e)
+      }
     if (selfProfile.isBlocked) {
       val reason = selfProfile.blockReason.ifBlank { "Messaging suspended by Admin moderation" }
       return Result.failure(IllegalStateException(reason))
@@ -497,128 +494,249 @@ class SocialRepository(
     if (cleanText.isBlank()) {
       return Result.failure(IllegalArgumentException("Message cannot be empty"))
     }
-    val chatId = buildChatRoomId(selfProfile.userId, targetProfile.userId)
-    val now = System.currentTimeMillis()
+    val targetUid = targetProfile.effectiveUid
+    val roomId = buildChatRoomId(uid, targetUid)
+    val roomRef = db.collection("chatRooms").document(roomId)
+    val msgRef = roomRef.collection("messages").document()
+    val notifRef = db.collection("appUsers").document(targetUid).collection("notifications").document()
+
     return try {
-      dao.upsertChatRoom(
-        ChatRoomEntity(
-          roomId = chatId,
-          partnerId = targetProfile.userId,
-          partnerHandle = targetProfile.handle,
-          partnerName = targetProfile.displayName,
-          lastMessage = cleanText.take(500),
-          lastSenderId = selfProfile.userId,
-          updatedAtMillis = now,
-        )
+      val batch = db.batch()
+      batch.set(
+        roomRef,
+        mapOf(
+          "participantIds" to listOf(uid, targetUid).sorted(),
+          "participantNames" to
+            listOf(selfProfile.displayName.take(100), targetProfile.displayName.take(100)),
+          "participantHandles" to
+            mapOf(uid to selfProfile.effectiveHandle, targetUid to targetProfile.effectiveHandle),
+          "participantDisplayNames" to
+            mapOf(uid to selfProfile.displayName, targetUid to targetProfile.displayName),
+          "lastMessage" to cleanText.take(500),
+          "lastSenderId" to uid,
+          "messageCount" to FieldValue.increment(1L),
+          "flaggedSpam" to false,
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+        SetOptions.merge(),
       )
-      val insertedId =
-        dao.insertMessage(
-          ChatMessageEntity(
-            remoteDocId = "local_${now}",
-            roomId = chatId,
-            senderId = selfProfile.userId,
-            senderHandle = selfProfile.handle,
-            recipientId = targetProfile.userId,
-            text = cleanText,
-            isRead = true,
-            createdAtMillis = now,
-          )
-        )
-      val totalCount = dao.countRoomMessages(chatId).toLong()
-      restClient.sendChatMessage(
-        roomId = chatId,
-        senderProfile = selfProfile,
-        receiverProfile = targetProfile,
-        text = cleanText,
-        messageCountEstimate = totalCount,
+      batch.set(
+        msgRef,
+        mapOf(
+          "roomId" to roomId,
+          "senderId" to uid,
+          "senderName" to selfProfile.displayName.take(100),
+          "senderHandle" to selfProfile.effectiveHandle.take(40),
+          "receiverId" to targetUid,
+          "text" to cleanText,
+          "isRead" to false,
+          "isFlagged" to false,
+          "createdAt" to FieldValue.serverTimestamp(),
+        ),
       )
-      Result.success(insertedId.toString())
+      batch.set(
+        notifRef,
+        mapOf(
+          "recipientId" to targetUid,
+          "senderId" to uid,
+          "senderHandle" to selfProfile.effectiveHandle.take(40),
+          "senderName" to selfProfile.displayName.take(100),
+          "type" to "message",
+          "previewText" to cleanText.take(140),
+          "chatId" to roomId,
+          "isRead" to false,
+          "createdAt" to FieldValue.serverTimestamp(),
+        ),
+      )
+      batch.commit().await()
+      Result.success(msgRef.id)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.CREATE, msgRef.path)
       Result.failure(e)
     }
   }
 
-  suspend fun markMessagesRead(chatId: String, recipientId: String): Result<Unit> =
-    try {
-      dao.markRoomMessagesRead(roomId = chatId, recipientId = recipientId)
+  suspend fun markMessagesRead(chatId: String, unreadMessages: List<ChatMessage>): Result<Unit> {
+    val uid =
+      try {
+        requireUserId()
+      } catch (e: Exception) {
+        return Result.failure(e)
+      }
+    val toUpdate = unreadMessages.filter { !it.isRead && it.effectiveRecipientId == uid && it.id.isNotBlank() }
+    if (toUpdate.isEmpty()) return Result.success(Unit)
+    val roomRef = db.collection("chatRooms").document(chatId)
+    return try {
+      val batch = db.batch()
+      toUpdate.forEach { msg ->
+        batch.update(roomRef.collection("messages").document(msg.id), "isRead", true)
+      }
+      batch.commit().await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.UPDATE, "${roomRef.path}/messages")
       Result.failure(e)
     }
+  }
 
-  suspend fun markNotificationsRead(): Result<Unit> =
-    try {
-      dao.markAllNotificationsRead()
+  suspend fun markNotificationsRead(selfUid: String, unread: List<SocialNotification>): Result<Unit> {
+    val uid =
+      try {
+        requireUserId()
+      } catch (e: Exception) {
+        return Result.failure(e)
+      }
+    if (uid != selfUid) return Result.success(Unit)
+    val toMark = unread.filter { !it.isRead && it.id.isNotBlank() }
+    if (toMark.isEmpty()) return Result.success(Unit)
+    val colRef = db.collection("appUsers").document(uid).collection("notifications")
+    return try {
+      val batch = db.batch()
+      toMark.forEach { notif ->
+        batch.update(colRef.document(notif.id), "isRead", true)
+      }
+      batch.commit().await()
       Result.success(Unit)
     } catch (e: CancellationException) {
       throw e
     } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.UPDATE, colRef.path)
       Result.failure(e)
     }
+  }
 
-  private fun UserProfileEntity.toModel(): PublicProfile =
-    PublicProfile(
-      id = userId,
-      userId = userId,
-      handle = handle,
-      displayName = displayName,
-      city = city,
-      address = address,
-      bio = bio,
-      followersCount = followersCount,
-      followingCount = followingCount,
-      likesCount = likesCount,
-      isFollowing = isFollowing,
-      isLiked = isLiked,
-      isBlocked = isBlocked,
-      blockReason = blockReason,
-      createdAtMillis = createdAtMillis,
-      updatedAtMillis = updatedAtMillis,
+  private fun DocumentSnapshot.toPublicProfile(): PublicProfile? {
+    val uidVal = getString("uid").orEmpty().ifBlank { getString("userId").orEmpty() }.ifBlank { id }
+    if (uidVal.isBlank()) return null
+    val rawHandle = getString("handle").orEmpty()
+    val rawUsername = getString("username").orEmpty()
+    val resolvedHandle =
+      when {
+        rawHandle.isNotBlank() -> rawHandle
+        rawUsername.startsWith("@") -> rawUsername
+        rawUsername.isNotBlank() -> "@$rawUsername"
+        else -> "@SL_${uidVal.takeLast(4).uppercase()}"
+      }
+    val likesVal =
+      maxOf(
+        getLong("likesReceivedCount") ?: 0L,
+        getLong("likesCount") ?: 0L,
+      )
+    val createdTs =
+      getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+    val updatedTs =
+      getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+
+    return PublicProfile(
+      id = id,
+      userId = uidVal,
+      uid = uidVal,
+      handle = resolvedHandle,
+      username = rawUsername.ifBlank { resolvedHandle.removePrefix("@") },
+      displayName = getString("displayName").orEmpty().ifBlank { "Shayari Lover" },
+      photoUrl = getString("photoUrl").orEmpty(),
+      city = getString("city").orEmpty(),
+      address = getString("address").orEmpty(),
+      bio = getString("bio").orEmpty(),
+      followersCount = getLong("followersCount") ?: 0L,
+      followingCount = getLong("followingCount") ?: 0L,
+      likesCount = likesVal,
+      likesReceivedCount = likesVal,
+      isOnline = getBoolean("isOnline") ?: true,
+      isBlocked = getBoolean("isBlocked") ?: false,
+      blockReason = getString("blockReason").orEmpty(),
+      createdAt = createdTs,
+      updatedAt = updatedTs,
+      createdAtMillis = createdTs?.toDate()?.time ?: 0L,
+      updatedAtMillis = updatedTs?.toDate()?.time ?: 0L,
     )
+  }
 
-  private fun ChatRoomEntity.toModel(): ChatRoom =
-    ChatRoom(
-      id = roomId,
+  private fun DocumentSnapshot.toChatRoom(selfUid: String): ChatRoom {
+    val participants =
+      (get("participantIds") as? List<*>)?.mapNotNull { it as? String }.orEmpty()
+    val partnerId = participants.firstOrNull { it != selfUid } ?: getString("partnerId").orEmpty()
+    val namesMap = (get("participantDisplayNames") as? Map<*, *>)
+    val handlesMap = (get("participantHandles") as? Map<*, *>)
+    val partnerName =
+      (namesMap?.get(partnerId) as? String)
+        ?: getString("partnerName").orEmpty().ifBlank { "Shayar Friend" }
+    val partnerHandle =
+      (handlesMap?.get(partnerId) as? String)
+        ?: getString("partnerHandle").orEmpty().ifBlank { "@SL_${partnerId.takeLast(4).uppercase()}" }
+    val updatedTs =
+      getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+
+    return ChatRoom(
+      id = id,
+      participantIds = participants,
       partnerId = partnerId,
       partnerHandle = partnerHandle,
       partnerName = partnerName,
-      lastMessage = lastMessage,
-      lastSenderId = lastSenderId,
-      updatedAtMillis = updatedAtMillis,
+      lastMessage = getString("lastMessage").orEmpty(),
+      lastSenderId = getString("lastSenderId").orEmpty(),
+      messageCount = getLong("messageCount") ?: 0L,
+      flaggedSpam = getBoolean("flaggedSpam") ?: false,
+      updatedAt = updatedTs,
+      updatedAtMillis = updatedTs?.toDate()?.time ?: 0L,
     )
+  }
 
-  private fun ChatMessageEntity.toModel(): ChatMessage =
-    ChatMessage(
-      id = id.toString(),
+  private fun DocumentSnapshot.toChatMessage(roomId: String): ChatMessage? {
+    val text = getString("text").orEmpty()
+    val senderId = getString("senderId").orEmpty()
+    if (text.isBlank() || senderId.isBlank()) return null
+    val receiverId = getString("receiverId").orEmpty().ifBlank { getString("recipientId").orEmpty() }
+    val createdTs =
+      getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+
+    return ChatMessage(
+      id = id,
       chatId = roomId,
+      roomId = getString("roomId").orEmpty().ifBlank { roomId },
       senderId = senderId,
-      senderHandle = senderHandle,
-      recipientId = recipientId,
+      senderName = getString("senderName").orEmpty(),
+      senderHandle = getString("senderHandle").orEmpty(),
+      recipientId = receiverId,
+      receiverId = receiverId,
       text = text,
-      isRead = isRead,
-      createdAtMillis = createdAtMillis,
+      isRead = getBoolean("isRead") ?: false,
+      isFlagged = getBoolean("isFlagged") ?: false,
+      createdAt = createdTs,
+      createdAtMillis = createdTs?.toDate()?.time ?: 0L,
     )
+  }
 
-  private fun SocialNotificationEntity.toModel(): SocialNotification =
-    SocialNotification(
-      id = id.toString(),
-      recipientId = recipientId,
-      senderId = senderId,
-      senderHandle = senderHandle,
-      senderName = senderName,
-      type = type,
-      previewText = previewText,
-      chatId = chatRoomId,
-      isRead = isRead,
-      createdAtMillis = createdAtMillis,
+  private fun DocumentSnapshot.toSocialNotification(selfUid: String): SocialNotification {
+    val createdTs =
+      getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+    return SocialNotification(
+      id = id,
+      recipientId = getString("recipientId").orEmpty().ifBlank { selfUid },
+      senderId = getString("senderId").orEmpty(),
+      senderHandle = getString("senderHandle").orEmpty(),
+      senderName = getString("senderName").orEmpty().ifBlank { "Shayari Lok" },
+      type = getString("type").orEmpty().ifBlank { "message" },
+      previewText = getString("previewText").orEmpty(),
+      chatId = getString("chatId").orEmpty(),
+      isRead = getBoolean("isRead") ?: false,
+      createdAt = createdTs,
+      createdAtMillis = createdTs?.toDate()?.time ?: 0L,
     )
+  }
 
   companion object {
     fun buildChatRoomId(uidA: String, uidB: String): String =
       "room_" + listOf(uidA, uidB).sorted().joinToString("_")
+
+    fun buildHandleFromUid(uid: String): String {
+      val hash = uid.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
+      val fourDigits = (1000 + (hash % 9000)).toString()
+      return "@SL_$fourDigits"
+    }
   }
 }

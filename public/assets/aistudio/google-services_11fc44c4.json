@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "663704095886",
+    "project_id": "psychic-advantage-nsmzh",
+    "storage_bucket": "psychic-advantage-nsmzh.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:663704095886:android:3f1232edee382fb4798ddf",
+        "android_client_info": {
+          "package_name": "com.cyberking.shayarilok"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "663704095886-21iunr4j2kfkuor3i8u6gak5fem1ihsk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBcE0ANyfOwuLiqrduMLlCY20PVQKJXoEc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "663704095886-21iunr4j2kfkuor3i8u6gak5fem1ihsk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

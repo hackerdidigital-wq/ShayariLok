@@ -10,22 +10,18 @@ import com.example.model.ChatMessage
 import com.example.model.ChatRoom
 import com.example.model.PublicProfile
 import com.example.model.SocialNotification
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 enum class CommunityFilter {
@@ -55,6 +51,7 @@ private data class SocialLocalInteraction(
 
 data class SocialUiState(
   val currentUserId: String,
+  val userEmail: String = "",
   val myProfile: PublicProfile,
   val isBootstrapping: Boolean = true,
   val isBusy: Boolean = false,
@@ -83,26 +80,25 @@ data class SocialUiState(
     get() = socialNotifications.count { !it.isRead && it.type == "like" }
 
   val otherUsers: List<PublicProfile>
-    get() = communityProfiles.filter { it.userId != currentUserId }
+    get() = communityProfiles.filter { it.effectiveUid != currentUserId }
 
   val filteredCommunityUsers: List<PublicProfile>
     get() {
       val base =
         when (communityFilter) {
           CommunityFilter.ALL -> otherUsers
-          CommunityFilter.FOLLOWING -> otherUsers.filter { it.userId in followingIds }
+          CommunityFilter.FOLLOWING -> otherUsers.filter { it.effectiveUid in followingIds }
           CommunityFilter.CHATS -> {
             val chatPartnerIds = chats.map { it.partnerId }.toSet()
-            otherUsers.filter { it.userId in chatPartnerIds }
+            otherUsers.filter { it.effectiveUid in chatPartnerIds }
           }
         }
       val q = searchQuery.trim()
       if (q.isEmpty()) return base
       return base.filter { user ->
         user.displayName.contains(q, ignoreCase = true) ||
-          user.handle.contains(q, ignoreCase = true) ||
+          user.effectiveHandle.contains(q, ignoreCase = true) ||
           user.city.contains(q, ignoreCase = true) ||
-          user.address.contains(q, ignoreCase = true) ||
           user.bio.contains(q, ignoreCase = true)
       }
     }
@@ -114,60 +110,66 @@ class SocialViewModel(
   private val currentUserId: String,
   private val defaultHandle: String,
   private val defaultName: String,
+  private val userEmail: String,
+  private val userPhotoUrl: String,
 ) : ViewModel() {
 
   private val fallbackProfile =
     PublicProfile(
       id = currentUserId,
       userId = currentUserId,
+      uid = currentUserId,
       handle = defaultHandle,
       displayName = defaultName,
+      photoUrl = userPhotoUrl,
       city = "",
-      address = "",
       bio = "Shayari Lok Member",
     )
 
   private val interactionState = MutableStateFlow(SocialLocalInteraction())
 
+  private fun unwrapFirestoreRootError(error: Throwable): Throwable {
+    val firestoreError =
+      generateSequence(error) { it.cause }
+        .filterIsInstance<FirebaseFirestoreException>()
+        .firstOrNull()
+    if (firestoreError == null && error is CancellationException) throw error
+    return firestoreError ?: error
+  }
+
   private val myProfileFlow =
     repository.observeMyProfile(currentUserId).catch { cause ->
-      if (cause is CancellationException) throw cause
-      reportError(cause)
+      reportError(unwrapFirestoreRootError(cause))
       emit(null)
     }
 
   private val discoverableProfilesFlow =
     repository.observeDiscoverableProfiles().catch { cause ->
-      if (cause is CancellationException) throw cause
-      reportError(cause)
+      reportError(unwrapFirestoreRootError(cause))
       emit(emptyList())
     }
 
   private val followingIdsFlow =
-    repository.observeMyFollowingIds().catch { cause ->
-      if (cause is CancellationException) throw cause
-      reportError(cause)
+    repository.observeMyFollowingIds(currentUserId).catch { cause ->
+      reportError(unwrapFirestoreRootError(cause))
       emit(emptySet())
     }
 
   private val likedIdsFlow =
-    repository.observeMyLikedProfileIds().catch { cause ->
-      if (cause is CancellationException) throw cause
-      reportError(cause)
+    repository.observeMyLikedProfileIds(currentUserId).catch { cause ->
+      reportError(unwrapFirestoreRootError(cause))
       emit(emptySet())
     }
 
   private val chatsFlow =
-    repository.observeMyChats().catch { cause ->
-      if (cause is CancellationException) throw cause
-      reportError(cause)
+    repository.observeMyChats(currentUserId).catch { cause ->
+      reportError(unwrapFirestoreRootError(cause))
       emit(emptyList())
     }
 
   private val notificationsFlow =
-    repository.observeSocialNotifications().catch { cause ->
-      if (cause is CancellationException) throw cause
-      reportError(cause)
+    repository.observeSocialNotifications(currentUserId).catch { cause ->
+      reportError(unwrapFirestoreRootError(cause))
       emit(emptyList())
     }
 
@@ -177,10 +179,9 @@ class SocialViewModel(
       if (partner == null) {
         flowOf(emptyList())
       } else {
-        val chatId = SocialRepository.buildChatRoomId(currentUserId, partner.userId)
+        val chatId = SocialRepository.buildChatRoomId(currentUserId, partner.effectiveUid)
         repository.observeChatMessages(chatId).catch { cause ->
-          if (cause is CancellationException) throw cause
-          reportError(cause)
+          reportError(unwrapFirestoreRootError(cause))
           emit(emptyList())
         }
       }
@@ -215,14 +216,16 @@ class SocialViewModel(
       val liveMyProfile = snapshot.myProfile ?: fallbackProfile
       val livePartner =
         interaction.activeChatPartner?.let { partner ->
-          snapshot.discoverableProfiles.firstOrNull { it.userId == partner.userId } ?: partner
+          snapshot.discoverableProfiles.firstOrNull { it.effectiveUid == partner.effectiveUid }
+            ?: partner
         }
       val inspected =
         interaction.inspectedProfileId?.let { inspectedId ->
-          snapshot.discoverableProfiles.firstOrNull { it.userId == inspectedId }
+          snapshot.discoverableProfiles.firstOrNull { it.effectiveUid == inspectedId }
         }
       SocialUiState(
         currentUserId = currentUserId,
+        userEmail = userEmail,
         myProfile = liveMyProfile,
         isBootstrapping = interaction.isBootstrapping,
         isBusy = interaction.isBusy,
@@ -244,6 +247,7 @@ class SocialViewModel(
       initialValue =
         SocialUiState(
           currentUserId = currentUserId,
+          userEmail = userEmail,
           myProfile = fallbackProfile,
         ),
     )
@@ -251,34 +255,14 @@ class SocialViewModel(
   init {
     viewModelScope.launch {
       repository
-        .ensureUserBootstrap(
-          selfUid = currentUserId,
+        .syncGoogleUserOnLogin(
           defaultHandle = defaultHandle,
           defaultDisplayName = defaultName,
+          email = userEmail,
+          photoUrl = userPhotoUrl,
         )
         .onFailure { reportError(it) }
       interactionState.update { it.copy(isBootstrapping = false) }
-    }
-
-    viewModelScope.launch {
-      interactionState
-        .map { it.activeChatPartner?.userId }
-        .distinctUntilChanged()
-        .collectLatest { partnerId ->
-          if (partnerId != null) {
-            val roomId = SocialRepository.buildChatRoomId(currentUserId, partnerId)
-            while (isActive) {
-              repository.syncRemoteRoomMessages(selfUid = currentUserId, roomId = roomId)
-              delay(3_500L)
-            }
-          }
-        }
-    }
-  }
-
-  fun refreshCommunity() {
-    viewModelScope.launch {
-      repository.syncRemoteUsersAndBlockStatus(currentUserId)
     }
   }
 
@@ -291,7 +275,7 @@ class SocialViewModel(
   }
 
   fun inspectProfile(profile: PublicProfile) {
-    interactionState.update { it.copy(inspectedProfileId = profile.userId) }
+    interactionState.update { it.copy(inspectedProfileId = profile.effectiveUid) }
   }
 
   fun dismissProfileSheet() {
@@ -305,12 +289,13 @@ class SocialViewModel(
   }
 
   fun openChatFromRoom(room: ChatRoom) {
-    val existing = uiState.value.communityProfiles.firstOrNull { it.userId == room.partnerId }
+    val existing = uiState.value.communityProfiles.firstOrNull { it.effectiveUid == room.partnerId }
     val partner =
       existing
         ?: PublicProfile(
           id = room.partnerId,
           userId = room.partnerId,
+          uid = room.partnerId,
           handle = room.partnerHandle.ifBlank { "@SL_USER" },
           displayName = room.partnerName.ifBlank { "Shayar Friend" },
         )
@@ -319,10 +304,11 @@ class SocialViewModel(
 
   fun openFromNotification(notification: SocialNotification) {
     val partner =
-      uiState.value.communityProfiles.firstOrNull { it.userId == notification.senderId }
+      uiState.value.communityProfiles.firstOrNull { it.effectiveUid == notification.senderId }
         ?: PublicProfile(
           id = notification.senderId,
           userId = notification.senderId,
+          uid = notification.senderId,
           handle = notification.senderHandle.ifBlank { "@SL_USER" },
           displayName = notification.senderName.ifBlank { "Shayar Friend" },
         )
@@ -349,7 +335,6 @@ class SocialViewModel(
       interactionState.update { it.copy(isBusy = true) }
       repository
         .updateMyProfile(
-          selfUid = currentUserId,
           displayName = displayName,
           city = city,
           address = address,
@@ -357,7 +342,7 @@ class SocialViewModel(
         )
         .onSuccess {
           interactionState.update {
-            it.copy(isBusy = false, actionFeedback = "Profile updated!")
+            it.copy(isBusy = false, actionFeedback = "Profile synced to Firestore!")
           }
           onSuccess()
         }
@@ -372,35 +357,9 @@ class SocialViewModel(
     }
   }
 
-  fun addFriend(
-    displayName: String,
-    handle: String,
-    city: String,
-    bio: String,
-    onSuccess: () -> Unit = {},
-  ) {
-    if (interactionState.value.isBusy) return
-    viewModelScope.launch {
-      interactionState.update { it.copy(isBusy = true) }
-      repository
-        .addFriendProfile(displayName = displayName, rawHandle = handle, city = city, bio = bio)
-        .onSuccess { friend ->
-          interactionState.update {
-            it.copy(isBusy = false, actionFeedback = "${friend.displayName} added to Friends!")
-          }
-          onSuccess()
-        }
-        .onFailure { err ->
-          interactionState.update {
-            it.copy(isBusy = false, actionFeedback = err.localizedMessage ?: "Could not add friend")
-          }
-        }
-    }
-  }
-
   fun toggleFollow(target: PublicProfile) {
     val state = uiState.value
-    val currentlyFollowing = target.userId in state.followingIds
+    val currentlyFollowing = target.effectiveUid in state.followingIds
     viewModelScope.launch {
       repository
         .toggleFollow(
@@ -419,7 +378,7 @@ class SocialViewModel(
 
   fun toggleLike(target: PublicProfile) {
     val state = uiState.value
-    val currentlyLiked = target.userId in state.likedProfileIds
+    val currentlyLiked = target.effectiveUid in state.likedProfileIds
     viewModelScope.launch {
       repository
         .toggleProfileLike(
@@ -450,18 +409,18 @@ class SocialViewModel(
 
   fun markActiveChatMessagesRead(messages: List<ChatMessage>) {
     val partner = uiState.value.activeChatPartner ?: return
-    val hasUnread = messages.any { !it.isRead && it.recipientId == currentUserId }
-    if (!hasUnread) return
-    val chatId = SocialRepository.buildChatRoomId(currentUserId, partner.userId)
+    val chatId = SocialRepository.buildChatRoomId(currentUserId, partner.effectiveUid)
+    if (messages.none { !it.isRead && it.effectiveRecipientId == currentUserId }) return
     viewModelScope.launch {
-      repository.markMessagesRead(chatId = chatId, recipientId = currentUserId)
+      repository.markMessagesRead(chatId = chatId, unreadMessages = messages)
     }
   }
 
   fun markAllNotificationsRead() {
-    if (uiState.value.socialNotifications.none { !it.isRead }) return
+    val currentNotifs = uiState.value.socialNotifications
+    if (currentNotifs.none { !it.isRead }) return
     viewModelScope.launch {
-      repository.markNotificationsRead()
+      repository.markNotificationsRead(selfUid = currentUserId, unread = currentNotifs)
     }
   }
 
@@ -470,7 +429,7 @@ class SocialViewModel(
   }
 
   private fun reportError(cause: Throwable) {
-    val msg = cause.localizedMessage ?: "Local save failed"
+    val msg = cause.localizedMessage ?: "Firestore sync error"
     interactionState.update { it.copy(actionFeedback = msg) }
   }
 
@@ -480,6 +439,8 @@ class SocialViewModel(
       currentUserId: String,
       defaultHandle: String,
       defaultName: String,
+      userEmail: String,
+      userPhotoUrl: String,
     ): ViewModelProvider.Factory = viewModelFactory {
       initializer {
         SocialViewModel(
@@ -487,6 +448,8 @@ class SocialViewModel(
           currentUserId = currentUserId,
           defaultHandle = defaultHandle,
           defaultName = defaultName,
+          userEmail = userEmail,
+          userPhotoUrl = userPhotoUrl,
         )
       }
     }

@@ -7,17 +7,26 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.util.Base64
 import com.example.model.ShayariConfig
+import com.example.model.ShayariItem
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.snapshots
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
-import org.json.JSONObject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 enum class ShayariTextSize(val label: String, val fontSizeSp: Int, val lineHeightSp: Int) {
   COMPACT("Compact", 16, 26),
@@ -243,6 +252,107 @@ class ShayariRepository(context: Context) {
         }
       }
     }.distinctUntilChanged()
+
+  fun observeRealtimeShayariOverlay(db: FirebaseFirestore): Flow<RealtimeShayariOverlay> {
+    val shayarisFlow =
+      flow {
+        val col = db.collection("shayaris")
+        emitAll(
+          col.snapshots()
+            .map { querySnap ->
+              querySnap.documents.mapIndexedNotNull { index, doc ->
+                val text =
+                  doc.getString("text").orEmpty().ifBlank { doc.getString("shayari").orEmpty() }.trim()
+                if (text.isBlank()) return@mapIndexedNotNull null
+                val category = doc.getString("category").orEmpty().trim().ifBlank { "General" }
+                val author = doc.getString("author").orEmpty().trim().ifBlank { "Shayari Lok" }
+                val imageUrl =
+                  doc.getString("image_url")
+                    ?.trim()
+                    ?.ifBlank { doc.getString("imageUrl")?.trim().orEmpty() }
+                    ?.ifBlank { doc.getString("thumbnail")?.trim().orEmpty() }
+                    .orEmpty()
+                val numericId =
+                  doc.getLong("id")?.toInt()?.takeIf { it > 0 }
+                    ?: ((doc.id.hashCode() and 0x7FFFFFFF).takeIf { it > 0 } ?: (10000 + index))
+
+                ShayariItem(
+                  id = numericId,
+                  category = category,
+                  text = text,
+                  author = author,
+                  imageUrl = imageUrl,
+                )
+              }
+            }
+            .catch { cause ->
+              if (cause is CancellationException) throw cause
+              handleFirestoreError(cause, OperationType.LIST, "shayaris")
+              emit(emptyList())
+            }
+        )
+      }
+
+    val appConfigDocFlow =
+      flow {
+        val docRef = db.collection("appConfig").document("main")
+        emitAll(
+          docRef.snapshots()
+            .map { snapshot ->
+              if (!snapshot.exists()) {
+                RealtimeAppConfigOverride()
+              } else {
+                val cats =
+                  (snapshot.get("categories") as? List<*>)
+                    ?.mapNotNull { (it as? String)?.trim()?.takeIf { s -> s.isNotEmpty() } }
+                    .orEmpty()
+                RealtimeAppConfigOverride(
+                  hasOverride = true,
+                  appName = snapshot.getString("app_name")?.ifBlank { snapshot.getString("appName") }.orEmpty(),
+                  maintenanceMode = snapshot.getBoolean("maintenance_mode") ?: snapshot.getBoolean("maintenanceMode"),
+                  maintenanceMessage =
+                    snapshot.getString("maintenance_message")
+                      ?.ifBlank { snapshot.getString("maintenanceMessage") }
+                      .orEmpty(),
+                  announcementTitle =
+                    snapshot.getString("announcement_title")
+                      ?.ifBlank { snapshot.getString("announcementTitle") }
+                      .orEmpty(),
+                  announcementMessage =
+                    snapshot.getString("announcement_message")
+                      ?.ifBlank { snapshot.getString("announcementMessage") }
+                      .orEmpty(),
+                  categories = cats,
+                )
+              }
+            }
+            .catch { cause ->
+              if (cause is CancellationException) throw cause
+              handleFirestoreError(cause, OperationType.GET, "appConfig/main")
+              emit(RealtimeAppConfigOverride())
+            }
+        )
+      }
+
+    return combine(shayarisFlow, appConfigDocFlow) { items, cfg ->
+      RealtimeShayariOverlay(shayariItems = items, appConfigOverride = cfg)
+    }
+  }
+
+  data class RealtimeAppConfigOverride(
+    val hasOverride: Boolean = false,
+    val appName: String = "",
+    val maintenanceMode: Boolean? = null,
+    val maintenanceMessage: String = "",
+    val announcementTitle: String = "",
+    val announcementMessage: String = "",
+    val categories: List<String> = emptyList(),
+  )
+
+  data class RealtimeShayariOverlay(
+    val shayariItems: List<com.example.model.ShayariItem> = emptyList(),
+    val appConfigOverride: RealtimeAppConfigOverride = RealtimeAppConfigOverride(),
+  )
 
   companion object {
     private const val PREFS_NAME = "shayari_lok_prefs"

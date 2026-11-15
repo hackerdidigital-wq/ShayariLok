@@ -46,4 +46,6 @@
     <string name="empty_community_subtitle">Try a different Name, City, or @SL_ handle to discover friends.</string>
     <string name="empty_chats_title">No conversations yet</string>
     <string name="empty_chats_subtitle">Tap any friend in the Friends tab to start a fast 1-on-1 Shayari chat.</string>
+    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="sign_out">Sign Out</string>
 </resources>

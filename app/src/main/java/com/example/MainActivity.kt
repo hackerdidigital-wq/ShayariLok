@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,12 +55,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import androidx.credentials.CredentialManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.data.DeviceIdentityHelper
+import com.example.data.GoogleAuthHelper
+import com.example.data.GoogleAuthHelper.authStateFlow
 import com.example.data.SocialRepository
 import com.example.model.ShayariItem
 import com.example.ui.MainTab
@@ -71,10 +74,15 @@ import com.example.ui.screens.MaintenanceScreen
 import com.example.ui.screens.MyProfileScreen
 import com.example.ui.screens.RealTimeChatScreen
 import com.example.ui.screens.ShayariSplashScreen
+import com.example.ui.screens.SignInScreen
 import com.example.ui.screens.SocialCommunityScreen
 import com.example.ui.screens.UnifiedAlertsSheet
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.ShayariLokTheme
+import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.auth
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -83,259 +91,294 @@ class MainActivity : ComponentActivity() {
     enableEdgeToEdge()
     setContent {
       ShayariLokTheme {
-        val viewModel: ShayariViewModel = viewModel()
-        val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-        val context = LocalContext.current
-        val lifecycleOwner = LocalLifecycleOwner.current
-        val snackbarHostState = remember { SnackbarHostState() }
-        val coroutineScope = rememberCoroutineScope()
-        val copiedMessage = stringResource(R.string.copied_snackbar)
-        val handleCopiedMessage = stringResource(R.string.handle_copied_snackbar)
+        ShayariLokRootGate()
+      }
+    }
+  }
+}
 
-        val deviceHandle = remember { DeviceIdentityHelper.getOrCreateDeviceHandle(context) }
-        val localUserId = remember(deviceHandle) {
-          "local_${deviceHandle.removePrefix("@").lowercase()}"
+@Composable
+private fun ShayariLokRootGate() {
+  val auth = Firebase.auth
+  val currentUser by
+    auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+  val user = currentUser
+
+  if (user == null) {
+    SignInScreen(
+      onAuthSuccess = {
+        // AuthStateListener updates currentUser reactively
+      }
+    )
+  } else {
+    key(user.uid) {
+      AuthenticatedShayariApp(firebaseUser = user)
+    }
+  }
+}
+
+@Composable
+private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
+  val context = LocalContext.current
+  val appContext = context.applicationContext
+  val lifecycleOwner = LocalLifecycleOwner.current
+  val snackbarHostState = remember { SnackbarHostState() }
+  val coroutineScope = rememberCoroutineScope()
+  val credentialManager = remember(context) { CredentialManager.create(context) }
+
+  val databaseId = remember(appContext) { appContext.getString(R.string.firestore_database_id) }
+  val firestore = remember(databaseId) { FirebaseFirestore.getInstance(databaseId) }
+
+  val viewModel: ShayariViewModel = viewModel(key = "shayari_${firebaseUser.uid}")
+  LaunchedEffect(firestore) {
+    viewModel.attachRealtimeFirestore(firestore)
+  }
+
+  val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+  val copiedMessage = stringResource(R.string.copied_snackbar)
+  val handleCopiedMessage = stringResource(R.string.handle_copied_snackbar)
+
+  val derivedHandle = remember(firebaseUser.uid) { SocialRepository.buildHandleFromUid(firebaseUser.uid) }
+  val googleName =
+    firebaseUser.displayName?.trim()?.takeIf { it.isNotEmpty() }
+      ?: firebaseUser.email?.substringBefore("@")?.takeIf { it.isNotEmpty() }
+      ?: "Shayari Lover"
+  val googleEmail = firebaseUser.email.orEmpty()
+  val googlePhoto = firebaseUser.photoUrl?.toString().orEmpty()
+
+  val socialRepository = remember(firestore) { SocialRepository(firestore) }
+  val socialViewModel: SocialViewModel =
+    viewModel(
+      key = "social_${firebaseUser.uid}",
+      factory =
+        SocialViewModel.factory(
+          repository = socialRepository,
+          currentUserId = firebaseUser.uid,
+          defaultHandle = derivedHandle,
+          defaultName = googleName,
+          userEmail = googleEmail,
+          userPhotoUrl = googlePhoto,
+        ),
+    )
+  val socialState by socialViewModel.uiState.collectAsStateWithLifecycle()
+  var showAlertsSheet by remember { mutableStateOf(false) }
+
+  val copyHandleToClipboard: (String) -> Unit = { handle ->
+    copyPlainText(context, "Shayari Lok ID", handle)
+    coroutineScope.launch {
+      snackbarHostState.currentSnackbarData?.dismiss()
+      snackbarHostState.showSnackbar(handleCopiedMessage)
+    }
+  }
+
+  LaunchedEffect(socialState.actionFeedback) {
+    val msg = socialState.actionFeedback
+    if (!msg.isNullOrBlank()) {
+      snackbarHostState.currentSnackbarData?.dismiss()
+      snackbarHostState.showSnackbar(msg)
+      socialViewModel.clearActionFeedback()
+    }
+  }
+
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        viewModel.onAppResumed()
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
+
+  LaunchedEffect(uiState.syncStatusMessage) {
+    val message = uiState.syncStatusMessage
+    if (!message.isNullOrBlank()) {
+      snackbarHostState.showSnackbar(message)
+      viewModel.clearSyncStatusMessage()
+    }
+  }
+
+  val totalUnreadAlerts = uiState.unreadNotificationCount + socialState.unreadNotificationsCount
+
+  AnimatedContent(
+    targetState =
+      if (uiState.isSplashVisible) {
+        "SPLASH"
+      } else {
+        when (uiState.screenState) {
+          is ShayariScreenState.Loading -> "SPLASH"
+          is ShayariScreenState.Maintenance -> "MAINTENANCE"
+          is ShayariScreenState.Ready -> "READY"
         }
-        val socialRepository = remember { SocialRepository(context) }
-        val socialViewModel: SocialViewModel =
-          viewModel(
-            key = "local_social_$localUserId",
-            factory =
-              SocialViewModel.factory(
-                repository = socialRepository,
-                currentUserId = localUserId,
-                defaultHandle = deviceHandle,
-                defaultName = "Shayari Lover",
-              ),
-          )
-        val socialState by socialViewModel.uiState.collectAsStateWithLifecycle()
-        var showAlertsSheet by remember { mutableStateOf(false) }
+      },
+    transitionSpec = {
+      (fadeIn(animationSpec = tween(380)) + scaleIn(initialScale = 0.98f, animationSpec = tween(380)))
+        .togetherWith(fadeOut(animationSpec = tween(260)))
+    },
+    label = "rootScreenTransition",
+  ) { targetStage ->
+    when (targetStage) {
+      "SPLASH" -> {
+        ShayariSplashScreen(appName = uiState.splashAppName)
+      }
 
-        val copyHandleToClipboard: (String) -> Unit = { handle ->
-          copyPlainText(context, "Shayari Lok ID", handle)
-          coroutineScope.launch {
-            snackbarHostState.currentSnackbarData?.dismiss()
-            snackbarHostState.showSnackbar(handleCopiedMessage)
-          }
-        }
-
-        LaunchedEffect(socialState.actionFeedback) {
-          val msg = socialState.actionFeedback
-          if (!msg.isNullOrBlank()) {
-            snackbarHostState.currentSnackbarData?.dismiss()
-            snackbarHostState.showSnackbar(msg)
-            socialViewModel.clearActionFeedback()
-          }
-        }
-
-        DisposableEffect(lifecycleOwner) {
-          val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-              viewModel.onAppResumed()
-              socialViewModel.refreshCommunity()
-            }
-          }
-          lifecycleOwner.lifecycle.addObserver(observer)
-          onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-        }
-
-        LaunchedEffect(uiState.syncStatusMessage) {
-          val message = uiState.syncStatusMessage
-          if (!message.isNullOrBlank()) {
-            snackbarHostState.showSnackbar(message)
-            viewModel.clearSyncStatusMessage()
-          }
-        }
-
-        val totalUnreadAlerts = uiState.unreadNotificationCount + socialState.unreadNotificationsCount
-
-        AnimatedContent(
-          targetState =
-            if (uiState.isSplashVisible) {
-              "SPLASH"
-            } else {
-              when (uiState.screenState) {
-                is ShayariScreenState.Loading -> "SPLASH"
-                is ShayariScreenState.Maintenance -> "MAINTENANCE"
-                is ShayariScreenState.Ready -> "READY"
-              }
-            },
-          transitionSpec = {
-            (fadeIn(animationSpec = tween(380)) + scaleIn(initialScale = 0.98f, animationSpec = tween(380)))
-              .togetherWith(fadeOut(animationSpec = tween(260)))
-          },
-          label = "rootScreenTransition",
-        ) { targetStage ->
-          when (targetStage) {
-            "SPLASH" -> {
-              ShayariSplashScreen(appName = uiState.splashAppName)
-            }
-
-            "MAINTENANCE" -> {
-              val maintenance = uiState.screenState as? ShayariScreenState.Maintenance
-              if (maintenance != null) {
-                MaintenanceScreen(
-                  appName = maintenance.appName,
-                  message = maintenance.message,
-                  socialLink = maintenance.socialLink,
-                  isRefreshing = uiState.isRefreshing,
-                  onRetryClick = { viewModel.retryConnection() },
-                  onOpenSocialLink = { url -> openExternalBrowser(context, url) },
-                )
-              }
-            }
-
-            else -> {
-              val ready = uiState.screenState as? ShayariScreenState.Ready
-              if (ready != null) {
-                val activePartner = socialState.activeChatPartner
-                if (activePartner != null) {
-                  RealTimeChatScreen(
-                    currentUserId = socialState.currentUserId,
-                    partner = activePartner,
-                    messages = socialState.activeChatMessages,
-                    isFollowingPartner = activePartner.userId in socialState.followingIds,
-                    isBlocked = socialState.myProfile.isBlocked,
-                    blockReason = socialState.myProfile.blockReason,
-                    onToggleFollowPartner = { socialViewModel.toggleFollow(activePartner) },
-                    onSendMessage = { text, onSent ->
-                      socialViewModel.sendMessage(text, onSent)
-                    },
-                    onMarkMessagesRead = socialViewModel::markActiveChatMessagesRead,
-                    onBack = socialViewModel::closeChat,
-                  )
-                } else {
-                  HomeScreen(
-                    readyState = ready,
-                    textSize = uiState.textSize,
-                    isRefreshing = uiState.isRefreshing,
-                    isSearchVisible = uiState.isSearchVisible,
-                    unreadNotificationCount = totalUnreadAlerts,
-                    snackbarHostState = snackbarHostState,
-                    onSelectCategory = viewModel::selectCategory,
-                    onSelectTab = { selectedTab ->
-                      viewModel.selectTab(selectedTab)
-                      if (selectedTab == MainTab.COMMUNITY || selectedTab == MainTab.PROFILE) {
-                        socialViewModel.refreshCommunity()
-                      }
-                    },
-                    onToggleSearch = viewModel::toggleSearchVisibility,
-                    onSearchQueryChange = viewModel::updateSearchQuery,
-                    onRefreshClick = {
-                      viewModel.refreshConfig(isSilentSync = false)
-                      socialViewModel.refreshCommunity()
-                    },
-                    onNotificationsClick = {
-                      viewModel.markAdminNotificationsRead()
-                      showAlertsSheet = true
-                    },
-                    onSettingsClick = {
-                      context.startActivity(Intent(context, SettingsActivity::class.java))
-                    },
-                    onShareAppClick = {
-                      shareAppWithFriends(context, ready.config.appName)
-                    },
-                    onOpenCommunityClick = { url -> openExternalBrowser(context, url) },
-                    onCopyShayari = { item ->
-                      copyShayariToClipboard(context, item)
-                      coroutineScope.launch {
-                        snackbarHostState.currentSnackbarData?.dismiss()
-                        snackbarHostState.showSnackbar(copiedMessage)
-                      }
-                    },
-                    onShareShayari = { item ->
-                      shareShayari(context, ready.config.appName, item)
-                    },
-                    onFavoriteToggle = viewModel::toggleFavorite,
-                    socialTabContent = { tab ->
-                      if (tab == MainTab.COMMUNITY) {
-                        SocialCommunityScreen(
-                          uiState = socialState,
-                          onSearchQueryChange = socialViewModel::updateSearchQuery,
-                          onSelectFilter = socialViewModel::selectFilter,
-                          onInspectProfile = socialViewModel::inspectProfile,
-                          onDismissProfileSheet = socialViewModel::dismissProfileSheet,
-                          onToggleFollow = socialViewModel::toggleFollow,
-                          onToggleLike = socialViewModel::toggleLike,
-                          onOpenChatWith = socialViewModel::openChatWith,
-                          onOpenChatRoom = socialViewModel::openChatFromRoom,
-                          onAddFriend = { name, handle, city, bio, onDone ->
-                            socialViewModel.addFriend(name, handle, city, bio, onDone)
-                          },
-                        )
-                      } else {
-                        MyProfileScreen(
-                          uiState = socialState,
-                          onCopyHandle = copyHandleToClipboard,
-                          onUpdateProfile = { name, city, address, bio, onDone ->
-                            socialViewModel.updateProfile(name, city, address, bio, onDone)
-                          },
-                          onOpenChatRoom = socialViewModel::openChatFromRoom,
-                          onOpenSettings = {
-                            context.startActivity(Intent(context, SettingsActivity::class.java))
-                          },
-                        )
-                      }
-                    },
-                  )
-                }
-
-                if (showAlertsSheet) {
-                  UnifiedAlertsSheet(
-                    adminNotifications = ready.config.notifications,
-                    socialState = socialState,
-                    onSocialNotificationClick = { notif ->
-                      showAlertsSheet = false
-                      viewModel.selectTab(MainTab.COMMUNITY)
-                      socialViewModel.openFromNotification(notif)
-                    },
-                    onMarkSocialRead = socialViewModel::markAllNotificationsRead,
-                    onDismiss = { showAlertsSheet = false },
-                  )
-                }
-
-                if (uiState.showUpdateDialog) {
-                  AlertDialog(
-                    onDismissRequest = viewModel::dismissUpdateDialog,
-                    title = { Text(stringResource(R.string.update_title)) },
-                    text = {
-                      Text(
-                        "A newer version (${ready.config.latestVersionCode}) of ${ready.config.appName} is available."
-                      )
-                    },
-                    confirmButton = {
-                      Button(
-                        onClick = {
-                          openExternalBrowser(context, ready.config.forceUpdateUrl)
-                        },
-                        modifier = Modifier.testTag("update_now_button"),
-                      ) {
-                        Text(stringResource(R.string.update_action))
-                      }
-                    },
-                    dismissButton = {
-                      TextButton(
-                        onClick = viewModel::dismissUpdateDialog,
-                        modifier = Modifier.testTag("update_later_button"),
-                      ) {
-                        Text(stringResource(R.string.later_action))
-                      }
-                    },
-                  )
-                }
-              }
-            }
-          }
-        }
-
-        if (uiState.showOfflineDialog && !uiState.isSplashVisible) {
-          CleanNoInternetDialog(
-            isRetrying = uiState.isRefreshing,
-            onRetryClick = viewModel::retryConnection,
+      "MAINTENANCE" -> {
+        val maintenance = uiState.screenState as? ShayariScreenState.Maintenance
+        if (maintenance != null) {
+          MaintenanceScreen(
+            appName = maintenance.appName,
+            message = maintenance.message,
+            socialLink = maintenance.socialLink,
+            isRefreshing = uiState.isRefreshing,
+            onRetryClick = { viewModel.retryConnection() },
+            onOpenSocialLink = { url -> openExternalBrowser(context, url) },
           )
         }
       }
+
+      else -> {
+        val ready = uiState.screenState as? ShayariScreenState.Ready
+        if (ready != null) {
+          val activePartner = socialState.activeChatPartner
+          if (activePartner != null) {
+            RealTimeChatScreen(
+              currentUserId = socialState.currentUserId,
+              partner = activePartner,
+              messages = socialState.activeChatMessages,
+              isFollowingPartner = activePartner.effectiveUid in socialState.followingIds,
+              isBlocked = socialState.myProfile.isBlocked,
+              blockReason = socialState.myProfile.blockReason,
+              onToggleFollowPartner = { socialViewModel.toggleFollow(activePartner) },
+              onSendMessage = { text, onSent ->
+                socialViewModel.sendMessage(text, onSent)
+              },
+              onMarkMessagesRead = socialViewModel::markActiveChatMessagesRead,
+              onBack = socialViewModel::closeChat,
+            )
+          } else {
+            HomeScreen(
+              readyState = ready,
+              textSize = uiState.textSize,
+              isRefreshing = uiState.isRefreshing,
+              isSearchVisible = uiState.isSearchVisible,
+              unreadNotificationCount = totalUnreadAlerts,
+              snackbarHostState = snackbarHostState,
+              onSelectCategory = viewModel::selectCategory,
+              onSelectTab = viewModel::selectTab,
+              onToggleSearch = viewModel::toggleSearchVisibility,
+              onSearchQueryChange = viewModel::updateSearchQuery,
+              onRefreshClick = { viewModel.refreshConfig(isSilentSync = false) },
+              onNotificationsClick = {
+                viewModel.markAdminNotificationsRead()
+                showAlertsSheet = true
+              },
+              onSettingsClick = {
+                context.startActivity(Intent(context, SettingsActivity::class.java))
+              },
+              onShareAppClick = {
+                shareAppWithFriends(context, ready.config.appName)
+              },
+              onOpenCommunityClick = { url -> openExternalBrowser(context, url) },
+              onCopyShayari = { item ->
+                copyShayariToClipboard(context, item)
+                coroutineScope.launch {
+                  snackbarHostState.currentSnackbarData?.dismiss()
+                  snackbarHostState.showSnackbar(copiedMessage)
+                }
+              },
+              onShareShayari = { item ->
+                shareShayari(context, ready.config.appName, item)
+              },
+              onFavoriteToggle = viewModel::toggleFavorite,
+              socialTabContent = { tab ->
+                if (tab == MainTab.COMMUNITY) {
+                  SocialCommunityScreen(
+                    uiState = socialState,
+                    onSearchQueryChange = socialViewModel::updateSearchQuery,
+                    onSelectFilter = socialViewModel::selectFilter,
+                    onInspectProfile = socialViewModel::inspectProfile,
+                    onDismissProfileSheet = socialViewModel::dismissProfileSheet,
+                    onToggleFollow = socialViewModel::toggleFollow,
+                    onToggleLike = socialViewModel::toggleLike,
+                    onOpenChatWith = socialViewModel::openChatWith,
+                    onOpenChatRoom = socialViewModel::openChatFromRoom,
+                  )
+                } else {
+                  MyProfileScreen(
+                    uiState = socialState,
+                    onCopyHandle = copyHandleToClipboard,
+                    onUpdateProfile = { name, city, address, bio, onDone ->
+                      socialViewModel.updateProfile(name, city, address, bio, onDone)
+                    },
+                    onOpenChatRoom = socialViewModel::openChatFromRoom,
+                    onOpenSettings = {
+                      context.startActivity(Intent(context, SettingsActivity::class.java))
+                    },
+                    onSignOut = {
+                      GoogleAuthHelper.signOut(
+                        credentialManager = credentialManager,
+                        scope = coroutineScope,
+                      )
+                    },
+                  )
+                }
+              },
+            )
+          }
+
+          if (showAlertsSheet) {
+            UnifiedAlertsSheet(
+              adminNotifications = ready.config.notifications,
+              socialState = socialState,
+              onSocialNotificationClick = { notif ->
+                showAlertsSheet = false
+                viewModel.selectTab(MainTab.COMMUNITY)
+                socialViewModel.openFromNotification(notif)
+              },
+              onMarkSocialRead = socialViewModel::markAllNotificationsRead,
+              onDismiss = { showAlertsSheet = false },
+            )
+          }
+
+          if (uiState.showUpdateDialog) {
+            AlertDialog(
+              onDismissRequest = viewModel::dismissUpdateDialog,
+              title = { Text(stringResource(R.string.update_title)) },
+              text = {
+                Text(
+                  "A newer version (${ready.config.latestVersionCode}) of ${ready.config.appName} is available."
+                )
+              },
+              confirmButton = {
+                Button(
+                  onClick = {
+                    openExternalBrowser(context, ready.config.forceUpdateUrl)
+                  },
+                  modifier = Modifier.testTag("update_now_button"),
+                ) {
+                  Text(stringResource(R.string.update_action))
+                }
+              },
+              dismissButton = {
+                TextButton(
+                  onClick = viewModel::dismissUpdateDialog,
+                  modifier = Modifier.testTag("update_later_button"),
+                ) {
+                  Text(stringResource(R.string.later_action))
+                }
+              },
+            )
+          }
+        }
+      }
     }
+  }
+
+  if (uiState.showOfflineDialog && !uiState.isSplashVisible) {
+    CleanNoInternetDialog(
+      isRetrying = uiState.isRefreshing,
+      onRetryClick = viewModel::retryConnection,
+    )
   }
 }
 

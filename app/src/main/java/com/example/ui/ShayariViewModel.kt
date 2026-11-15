@@ -8,6 +8,7 @@ import com.example.data.ShayariRepository
 import com.example.data.ShayariTextSize
 import com.example.model.ShayariConfig
 import com.example.model.ShayariItem
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,7 +94,9 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   private val _uiState = MutableStateFlow(ShayariUiState())
   val uiState: StateFlow<ShayariUiState> = _uiState.asStateFlow()
 
-  private var currentConfig: ShayariConfig = repository.loadCachedConfig()
+  private var baseConfig: ShayariConfig = repository.loadCachedConfig()
+  private var realtimeOverlay: ShayariRepository.RealtimeShayariOverlay? = null
+  private var currentConfig: ShayariConfig = baseConfig
   private var selectedCategory: String =
     currentConfig.categories.firstOrNull() ?: "All"
   private var activeTab: MainTab = MainTab.EXPLORE
@@ -105,6 +108,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   private var hasPendingRemoteSync: Boolean = false
   private var disconnectDebounceJob: Job? = null
   private var silentRetryJob: Job? = null
+  private var firestoreObserverJob: Job? = null
 
   init {
     val initialOnline = repository.isNetworkAvailable()
@@ -165,8 +169,60 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     }
   }
 
+  fun attachRealtimeFirestore(db: FirebaseFirestore) {
+    if (firestoreObserverJob?.isActive == true) return
+    firestoreObserverJob =
+      viewModelScope.launch {
+        repository.observeRealtimeShayariOverlay(db).collect { overlay ->
+          realtimeOverlay = overlay
+          currentConfig = mergeConfigWithOverlay(baseConfig, overlay)
+          publishCurrentState(syncMessage = null)
+        }
+      }
+  }
+
+  private fun mergeConfigWithOverlay(
+    base: ShayariConfig,
+    overlay: ShayariRepository.RealtimeShayariOverlay?,
+  ): ShayariConfig {
+    if (overlay == null) return base
+    val cfg = overlay.appConfigOverride
+    val firestoreItems = overlay.shayariItems
+    val existingIds = firestoreItems.map { it.id }.toSet()
+    val combinedItems =
+      if (firestoreItems.isNotEmpty()) {
+        firestoreItems + base.shayariList.filterNot { it.id in existingIds }
+      } else {
+        base.shayariList
+      }
+    val rawCategories =
+      (if (cfg.categories.isNotEmpty()) cfg.categories else base.categories) +
+        combinedItems.map { it.category }
+    val mergedCategories =
+      buildList {
+        add("All")
+        rawCategories.forEach { cat ->
+          val clean = cat.trim()
+          if (clean.isNotEmpty() && !clean.equals("All", ignoreCase = true) && none { it.equals(clean, ignoreCase = true) }) {
+            add(clean)
+          }
+        }
+      }
+
+    return base.copy(
+      appName = cfg.appName.ifBlank { base.appName },
+      maintenanceMode = cfg.maintenanceMode ?: base.maintenanceMode,
+      maintenanceMessage = cfg.maintenanceMessage.ifBlank { base.maintenanceMessage },
+      announcementTitle = cfg.announcementTitle.ifBlank { base.announcementTitle },
+      announcementMessage = cfg.announcementMessage.ifBlank { base.announcementMessage },
+      categories = mergedCategories,
+      shayariList = combinedItems,
+    )
+  }
+
   fun onAppResumed() {
-    currentConfig = repository.loadCachedConfig()
+    baseConfig = repository.loadCachedConfig()
+    currentConfig = mergeConfigWithOverlay(baseConfig, realtimeOverlay)
     favoriteIds = repository.getFavoriteIds()
     textSize = repository.getShayariTextSize()
     if (
@@ -231,7 +287,8 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         onSuccess = { remoteConfig ->
           hasPendingRemoteSync = false
           silentRetryJob?.cancel()
-          currentConfig = remoteConfig
+          baseConfig = remoteConfig
+          currentConfig = mergeConfigWithOverlay(baseConfig, realtimeOverlay)
           if (
             !selectedCategory.equals("Popular", ignoreCase = true) &&
               !selectedCategory.equals("All", ignoreCase = true) &&
