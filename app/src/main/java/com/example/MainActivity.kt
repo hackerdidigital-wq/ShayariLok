@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,11 +49,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.credentials.CredentialManager
@@ -130,11 +133,15 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
   val firestore = remember(databaseId) { FirebaseFirestore.getInstance(databaseId) }
 
   val viewModel: ShayariViewModel = viewModel(key = "shayari_${firebaseUser.uid}")
-  LaunchedEffect(firestore) {
-    viewModel.attachRealtimeFirestore(firestore)
+  LaunchedEffect(firestore, firebaseUser.uid) {
+    viewModel.attachRealtimeFirestore(firestore, firebaseUser.uid)
   }
 
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+  val activeDynamicTheme =
+    (uiState.screenState as? ShayariScreenState.Ready)?.config?.dynamicTheme
+      ?: com.example.model.DynamicThemeConfig()
+  val layoutDir = if (uiState.isRtlLayout) LayoutDirection.Rtl else LayoutDirection.Ltr
   val copiedMessage = stringResource(R.string.copied_snackbar)
   val handleCopiedMessage = stringResource(R.string.handle_copied_snackbar)
 
@@ -200,7 +207,9 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
 
   val totalUnreadAlerts = uiState.unreadNotificationCount + socialState.unreadNotificationsCount
 
-  AnimatedContent(
+  ShayariLokTheme(dynamicTheme = activeDynamicTheme) {
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDir) {
+      AnimatedContent(
     targetState =
       if (uiState.isSplashVisible) {
         "SPLASH"
@@ -263,6 +272,10 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
               isSearchVisible = uiState.isSearchVisible,
               unreadNotificationCount = totalUnreadAlerts,
               snackbarHostState = snackbarHostState,
+              selectedLanguageCode = uiState.selectedLanguageCode,
+              selectedCountryCode = uiState.selectedCountryCode,
+              dailyStreakDays = uiState.dailyStreakDays,
+              votedPollOptions = uiState.votedPollOptions,
               onSelectCategory = viewModel::selectCategory,
               onSelectTab = viewModel::selectTab,
               onToggleSearch = viewModel::toggleSearchVisibility,
@@ -289,7 +302,13 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
               onShareShayari = { item ->
                 shareShayari(context, ready.config.appName, item)
               },
+              onWhatsAppShareShayari = { item ->
+                shareShayariOnWhatsApp(context, ready.config.appName, item)
+              },
               onFavoriteToggle = viewModel::toggleFavorite,
+              onSelectLanguage = viewModel::selectLanguage,
+              onSelectCountry = viewModel::selectCountry,
+              onVotePoll = viewModel::voteInPoll,
               socialTabContent = { tab ->
                 if (tab == MainTab.COMMUNITY) {
                   SocialCommunityScreen(
@@ -374,11 +393,13 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
     }
   }
 
-  if (uiState.showOfflineDialog && !uiState.isSplashVisible) {
-    CleanNoInternetDialog(
-      isRetrying = uiState.isRefreshing,
-      onRetryClick = viewModel::retryConnection,
-    )
+    if (uiState.showOfflineDialog && !uiState.isSplashVisible) {
+      CleanNoInternetDialog(
+        isRetrying = uiState.isRefreshing,
+        onRetryClick = viewModel::retryConnection,
+      )
+    }
+    }
   }
 }
 
@@ -484,6 +505,21 @@ private fun shareShayari(context: Context, appName: String, item: ShayariItem) {
       putExtra(Intent.EXTRA_TEXT, shareText)
     }
   context.startActivity(Intent.createChooser(intent, "Share Shayari"))
+}
+
+private fun shareShayariOnWhatsApp(context: Context, appName: String, item: ShayariItem) {
+  val shareText = "${item.text}\n\n— $appName ✨"
+  val whatsappIntent =
+    Intent(Intent.ACTION_SEND).apply {
+      type = "text/plain"
+      setPackage("com.whatsapp")
+      putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+  try {
+    context.startActivity(whatsappIntent)
+  } catch (_: Exception) {
+    shareShayari(context, appName, item)
+  }
 }
 
 private fun shareAppWithFriends(context: Context, appName: String) {

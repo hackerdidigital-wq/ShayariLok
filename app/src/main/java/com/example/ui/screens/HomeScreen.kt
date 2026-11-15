@@ -92,6 +92,9 @@ import com.example.data.ShayariTextSize
 import com.example.model.ShayariItem
 import com.example.ui.MainTab
 import com.example.ui.ShayariScreenState
+import com.example.ui.components.DailyStreakAndLocaleBar
+import com.example.ui.components.LanguageCountrySelectorDialog
+import com.example.ui.components.LivePollCard
 import com.example.ui.components.ShayariCard
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.CrownGold
@@ -102,6 +105,7 @@ import com.example.ui.theme.MidnightIndigo
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
 import com.example.ui.theme.NeonVioletGlow
+import com.example.ui.theme.parseHexColorOrNull
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -115,6 +119,10 @@ fun HomeScreen(
   isSearchVisible: Boolean,
   unreadNotificationCount: Int,
   snackbarHostState: SnackbarHostState,
+  selectedLanguageCode: String = "hi",
+  selectedCountryCode: String = "IN",
+  dailyStreakDays: Int = 1,
+  votedPollOptions: Map<String, String> = emptyMap(),
   onSelectCategory: (String) -> Unit,
   onSelectTab: (MainTab) -> Unit,
   onToggleSearch: () -> Unit,
@@ -126,10 +134,15 @@ fun HomeScreen(
   onOpenCommunityClick: (String) -> Unit,
   onCopyShayari: (ShayariItem) -> Unit,
   onShareShayari: (ShayariItem) -> Unit,
+  onWhatsAppShareShayari: (ShayariItem) -> Unit = onShareShayari,
   onFavoriteToggle: (Int) -> Unit,
+  onSelectLanguage: (String) -> Unit = {},
+  onSelectCountry: (String) -> Unit = {},
+  onVotePoll: (pollId: String, optionId: String) -> Unit = { _, _ -> },
   socialTabContent: @Composable (MainTab) -> Unit,
 ) {
   var isMenuExpanded by remember { mutableStateOf(false) }
+  var showLocaleDialog by remember { mutableStateOf(false) }
 
   BackHandler(enabled = isMenuExpanded) {
     isMenuExpanded = false
@@ -238,11 +251,14 @@ fun HomeScreen(
         }
       },
       topBar = {
+        val dynamicPrimary = parseHexColorOrNull(readyState.config.dynamicTheme.primaryHex)
+        val headerStart = dynamicPrimary ?: HeaderPurpleStart
+        val headerEnd = dynamicPrimary?.copy(alpha = 0.85f) ?: HeaderPurpleEnd
         Column(
           modifier =
             Modifier.fillMaxWidth()
               .background(
-                Brush.verticalGradient(colors = listOf(HeaderPurpleStart, HeaderPurpleEnd))
+                Brush.verticalGradient(colors = listOf(headerStart, headerEnd))
               )
               .statusBarsPadding()
         ) {
@@ -327,6 +343,27 @@ fun HomeScreen(
                     modifier = Modifier.testTag("menu_community_item"),
                   )
                 }
+                DropdownMenuItem(
+                  text = {
+                    Text(
+                      text = stringResource(R.string.language_country_title),
+                      color = Color(0xFF1D0D36),
+                    )
+                  },
+                  leadingIcon = {
+                    Icon(
+                      painter = painterResource(id = R.drawable.ic_language),
+                      contentDescription = null,
+                      tint = BadgePurple,
+                      modifier = Modifier.size(20.dp),
+                    )
+                  },
+                  onClick = {
+                    isMenuExpanded = false
+                    showLocaleDialog = true
+                  },
+                  modifier = Modifier.testTag("menu_locale_item"),
+                )
                 DropdownMenuItem(
                   text = {
                     Text(
@@ -646,6 +683,16 @@ fun HomeScreen(
           }
 
           val items = readyState.visibleShayaris
+          val selectedLangObj =
+            readyState.config.supportedLanguages.firstOrNull {
+              it.code.equals(selectedLanguageCode, ignoreCase = true)
+            }
+          val selectedCountryObj =
+            readyState.config.supportedCountries.firstOrNull {
+              it.code.equals(selectedCountryCode, ignoreCase = true)
+            }
+          val engagement = readyState.config.engagement
+
           PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = onRefreshClick,
@@ -675,8 +722,10 @@ fun HomeScreen(
                     item = item,
                     isFavorite = item.id in readyState.favoriteIds,
                     textSize = textSize,
+                    whatsappShareEnabled = engagement.whatsappShareEnabled,
                     onCopyClick = onCopyShayari,
                     onShareClick = onShareShayari,
+                    onWhatsAppClick = onWhatsAppShareShayari,
                     onFavoriteToggle = onFavoriteToggle,
                     modifier = Modifier.animateItem(),
                   )
@@ -691,13 +740,35 @@ fun HomeScreen(
                     .fillMaxSize()
                     .align(Alignment.TopCenter),
               ) {
+                if (readyState.activeTab == MainTab.EXPLORE) {
+                  item(key = "streak_locale_bar") {
+                    DailyStreakAndLocaleBar(
+                      showStreak = engagement.dailyStreakEnabled,
+                      streakDays = dailyStreakDays,
+                      selectedLanguage = selectedLangObj,
+                      selectedCountry = selectedCountryObj,
+                      onOpenLocalePicker = { showLocaleDialog = true },
+                    )
+                  }
+                  if (engagement.polls.isNotEmpty()) {
+                    items(engagement.polls, key = { "poll_${it.id}" }) { poll ->
+                      LivePollCard(
+                        poll = poll,
+                        selectedOptionId = votedPollOptions[poll.id],
+                        onVote = onVotePoll,
+                      )
+                    }
+                  }
+                }
                 items(items, key = { it.id }) { item ->
                   ShayariCard(
                     item = item,
                     isFavorite = item.id in readyState.favoriteIds,
                     textSize = textSize,
+                    whatsappShareEnabled = engagement.whatsappShareEnabled,
                     onCopyClick = onCopyShayari,
                     onShareClick = onShareShayari,
+                    onWhatsAppClick = onWhatsAppShareShayari,
                     onFavoriteToggle = onFavoriteToggle,
                     modifier = Modifier.animateItem(),
                   )
@@ -709,6 +780,18 @@ fun HomeScreen(
           }
         }
       }
+    }
+
+    if (showLocaleDialog) {
+      LanguageCountrySelectorDialog(
+        languages = readyState.config.supportedLanguages,
+        countries = readyState.config.supportedCountries,
+        selectedLanguageCode = selectedLanguageCode,
+        selectedCountryCode = selectedCountryCode,
+        onSelectLanguage = onSelectLanguage,
+        onSelectCountry = onSelectCountry,
+        onDismiss = { showLocaleDialog = false },
+      )
     }
   }
 }

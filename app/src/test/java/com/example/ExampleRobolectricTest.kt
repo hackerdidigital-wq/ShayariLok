@@ -369,4 +369,77 @@ class ExampleRobolectricTest {
       )
     assertEquals("uid_b", msg.effectiveRecipientId)
   }
+
+  @Test
+  fun `publicSites Firestore map parses supported_languages RTL, countries, dynamic_theme, and polls`() {
+    val firestoreDocMap: Map<String, Any?> =
+      mapOf(
+        "app_name" to "Shayari Lok Pro",
+        "latest_version_code" to 5L,
+        "maintenance_mode" to false,
+        "supported_languages" to listOf("hi", "en", "ur"),
+        "supported_countries" to listOf("IN", "AE"),
+        "dynamic_theme" to
+          mapOf(
+            "primary_color" to "#9C27B0",
+            "accent_color" to "#FF4081",
+            "dark_mode" to true,
+          ),
+        "engagement" to
+          mapOf(
+            "daily_streak_enabled" to true,
+            "whatsapp_share_enabled" to true,
+            "polls" to
+              listOf(
+                mapOf(
+                  "id" to "poll_1",
+                  "question" to "Favorite Shayari mood?",
+                  "options" to
+                    listOf(
+                      mapOf("id" to "love", "label" to "Love", "votes" to 10L),
+                      mapOf("id" to "sad", "label" to "Sad", "votes" to 4L),
+                    ),
+                )
+              ),
+          ),
+        "categories" to listOf("All", "Love"),
+        "shayari_list" to
+          listOf(
+            mapOf("id" to 101L, "category" to "Love", "text" to "Dil se nikli baat", "author" to "Shayar")
+          ),
+      )
+
+    val parsed = ShayariConfig.fromFirestoreMap(firestoreDocMap)
+    assertEquals("Shayari Lok Pro", parsed.appName)
+    assertEquals(5, parsed.latestVersionCode)
+    assertEquals(3, parsed.supportedLanguages.size)
+    assertTrue(parsed.supportedLanguages.first { it.code == "ur" }.isRtl)
+    assertFalse(parsed.supportedLanguages.first { it.code == "hi" }.isRtl)
+    assertEquals(listOf("IN", "AE"), parsed.supportedCountries.map { it.code })
+    assertEquals("#9C27B0", parsed.dynamicTheme.primaryHex)
+    assertEquals("#FF4081", parsed.dynamicTheme.accentHex)
+    assertTrue(parsed.dynamicTheme.darkMode)
+    assertEquals(1, parsed.engagement.polls.size)
+    assertEquals(14, parsed.engagement.polls.first().totalVotes)
+  }
+
+  @Test
+  fun `repository tracks daily streak, language and country selection, and poll votes`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    app.getSharedPreferences("shayari_lok_prefs", Context.MODE_PRIVATE).edit().clear().commit()
+    val repo = ShayariRepository(app)
+
+    assertEquals(1, repo.recordDailyVisitAndGetStreak("2026-11-14"))
+    assertEquals(1, repo.recordDailyVisitAndGetStreak("2026-11-14"))
+    assertEquals(2, repo.recordDailyVisitAndGetStreak("2026-11-15"))
+    assertEquals(1, repo.recordDailyVisitAndGetStreak("2026-11-18"))
+
+    repo.setSelectedLanguageCode("ur")
+    repo.setSelectedCountryCode("AE")
+    assertEquals("ur", repo.getSelectedLanguageCode())
+    assertEquals("AE", repo.getSelectedCountryCode())
+
+    repo.savePollVoteLocal("poll_1", "love")
+    assertEquals("love", repo.getVotedPollOptions()["poll_1"])
+  }
 }

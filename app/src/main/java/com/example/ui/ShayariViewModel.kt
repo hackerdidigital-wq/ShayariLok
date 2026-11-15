@@ -85,6 +85,11 @@ data class ShayariUiState(
   val syncStatusMessage: String? = null,
   val showUpdateDialog: Boolean = false,
   val unreadNotificationCount: Int = 0,
+  val selectedLanguageCode: String = "hi",
+  val selectedCountryCode: String = "IN",
+  val isRtlLayout: Boolean = false,
+  val dailyStreakDays: Int = 1,
+  val votedPollOptions: Map<String, String> = emptyMap(),
 )
 
 class ShayariViewModel(application: Application) : AndroidViewModel(application) {
@@ -102,6 +107,10 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   private var activeTab: MainTab = MainTab.EXPLORE
   private var favoriteIds: Set<Int> = repository.getFavoriteIds()
   private var textSize: ShayariTextSize = repository.getShayariTextSize()
+  private var selectedLanguageCode: String = repository.getSelectedLanguageCode()
+  private var selectedCountryCode: String = repository.getSelectedCountryCode()
+  private var dailyStreakDays: Int = repository.recordDailyVisitAndGetStreak()
+  private var votedPollOptions: Map<String, String> = repository.getVotedPollOptions()
   private var searchQuery: String = ""
   private var updateDismissedThisSession: Boolean = false
   private var hasObservedInitialNetworkState: Boolean = false
@@ -109,6 +118,8 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   private var disconnectDebounceJob: Job? = null
   private var silentRetryJob: Job? = null
   private var firestoreObserverJob: Job? = null
+  private var attachedFirestore: FirebaseFirestore? = null
+  private var attachedUid: String = ""
 
   init {
     val initialOnline = repository.isNetworkAvailable()
@@ -117,6 +128,11 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         isNetworkConnected = initialOnline,
         showOfflineDialog = !initialOnline,
         splashAppName = currentConfig.appName,
+        selectedLanguageCode = selectedLanguageCode,
+        selectedCountryCode = selectedCountryCode,
+        isRtlLayout = computeIsRtl(selectedLanguageCode, currentConfig),
+        dailyStreakDays = dailyStreakDays,
+        votedPollOptions = votedPollOptions,
       )
     }
     publishCurrentState(syncMessage = null)
@@ -130,6 +146,11 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
       }
       _uiState.update { it.copy(isSplashVisible = false) }
     }
+  }
+
+  private fun computeIsRtl(langCode: String, cfg: ShayariConfig): Boolean {
+    val matched = cfg.supportedLanguages.firstOrNull { it.code.equals(langCode, ignoreCase = true) }
+    return matched?.isRtl ?: (langCode.lowercase() in com.example.model.SupportedLanguage.RTL_LANGUAGE_CODES)
   }
 
   private fun observeConnectivity() {
@@ -146,11 +167,9 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
             )
           }
           if ((hasObservedInitialNetworkState && !wasConnected) || hasPendingRemoteSync) {
-            // Internet is active/restored: silently auto-sync latest server data
             refreshConfig(isSilentSync = true)
           }
         } else {
-          // Debounce briefly so Wi-Fi <-> Mobile Data handoff never triggers false pop-ups
           disconnectDebounceJob?.cancel()
           disconnectDebounceJob =
             viewModelScope.launch {
@@ -169,7 +188,9 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     }
   }
 
-  fun attachRealtimeFirestore(db: FirebaseFirestore) {
+  fun attachRealtimeFirestore(db: FirebaseFirestore, uid: String = "") {
+    attachedFirestore = db
+    if (uid.isNotBlank()) attachedUid = uid
     if (firestoreObserverJob?.isActive == true) return
     firestoreObserverJob =
       viewModelScope.launch {
@@ -181,22 +202,65 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
       }
   }
 
+  fun selectLanguage(languageCode: String) {
+    val normalized = languageCode.trim().lowercase().ifBlank { "hi" }
+    selectedLanguageCode = normalized
+    repository.setSelectedLanguageCode(normalized)
+    publishCurrentState(syncMessage = null)
+  }
+
+  fun selectCountry(countryCode: String) {
+    val normalized = countryCode.trim().uppercase().ifBlank { "IN" }
+    selectedCountryCode = normalized
+    repository.setSelectedCountryCode(normalized)
+    publishCurrentState(syncMessage = null)
+  }
+
+  fun voteInPoll(pollId: String, optionId: String) {
+    repository.savePollVoteLocal(pollId, optionId)
+    votedPollOptions = repository.getVotedPollOptions()
+    publishCurrentState(syncMessage = "Thanks for voting!")
+    val db = attachedFirestore
+    val uid = attachedUid
+    val siteDocId = realtimeOverlay?.publicSiteDocId.orEmpty()
+    if (db != null && uid.isNotBlank()) {
+      viewModelScope.launch {
+        repository.submitPollVoteToFirestore(db, siteDocId, pollId, optionId, uid)
+      }
+    }
+  }
+
   private fun mergeConfigWithOverlay(
     base: ShayariConfig,
     overlay: ShayariRepository.RealtimeShayariOverlay?,
   ): ShayariConfig {
     if (overlay == null) return base
+    val publicSite = overlay.publicSiteConfig
+    val effectiveBase =
+      if (publicSite != null) {
+        publicSite.copy(
+          shayariList =
+            if (publicSite.shayariList.isNotEmpty()) publicSite.shayariList else base.shayariList,
+          notifications =
+            if (publicSite.notifications.isNotEmpty()) publicSite.notifications else base.notifications,
+          categories =
+            if (publicSite.categories.isNotEmpty()) publicSite.categories else base.categories,
+        )
+      } else {
+        base
+      }
+
     val cfg = overlay.appConfigOverride
     val firestoreItems = overlay.shayariItems
     val existingIds = firestoreItems.map { it.id }.toSet()
     val combinedItems =
       if (firestoreItems.isNotEmpty()) {
-        firestoreItems + base.shayariList.filterNot { it.id in existingIds }
+        firestoreItems + effectiveBase.shayariList.filterNot { it.id in existingIds }
       } else {
-        base.shayariList
+        effectiveBase.shayariList
       }
     val rawCategories =
-      (if (cfg.categories.isNotEmpty()) cfg.categories else base.categories) +
+      (if (cfg.categories.isNotEmpty()) cfg.categories else effectiveBase.categories) +
         combinedItems.map { it.category }
     val mergedCategories =
       buildList {
@@ -209,12 +273,12 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         }
       }
 
-    return base.copy(
-      appName = cfg.appName.ifBlank { base.appName },
-      maintenanceMode = cfg.maintenanceMode ?: base.maintenanceMode,
-      maintenanceMessage = cfg.maintenanceMessage.ifBlank { base.maintenanceMessage },
-      announcementTitle = cfg.announcementTitle.ifBlank { base.announcementTitle },
-      announcementMessage = cfg.announcementMessage.ifBlank { base.announcementMessage },
+    return effectiveBase.copy(
+      appName = cfg.appName.ifBlank { effectiveBase.appName },
+      maintenanceMode = cfg.maintenanceMode ?: effectiveBase.maintenanceMode,
+      maintenanceMessage = cfg.maintenanceMessage.ifBlank { effectiveBase.maintenanceMessage },
+      announcementTitle = cfg.announcementTitle.ifBlank { effectiveBase.announcementTitle },
+      announcementMessage = cfg.announcementMessage.ifBlank { effectiveBase.announcementMessage },
       categories = mergedCategories,
       shayariList = combinedItems,
     )
@@ -225,6 +289,10 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     currentConfig = mergeConfigWithOverlay(baseConfig, realtimeOverlay)
     favoriteIds = repository.getFavoriteIds()
     textSize = repository.getShayariTextSize()
+    selectedLanguageCode = repository.getSelectedLanguageCode()
+    selectedCountryCode = repository.getSelectedCountryCode()
+    dailyStreakDays = repository.recordDailyVisitAndGetStreak()
+    votedPollOptions = repository.getVotedPollOptions()
     if (
       !selectedCategory.equals("Popular", ignoreCase = true) &&
         !selectedCategory.equals("All", ignoreCase = true) &&
@@ -425,6 +493,11 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         syncStatusMessage = syncMessage,
         showUpdateDialog = needsUpdate,
         unreadNotificationCount = unreadCount,
+        selectedLanguageCode = selectedLanguageCode,
+        selectedCountryCode = selectedCountryCode,
+        isRtlLayout = computeIsRtl(selectedLanguageCode, currentConfig),
+        dailyStreakDays = dailyStreakDays,
+        votedPollOptions = votedPollOptions,
       )
     }
   }

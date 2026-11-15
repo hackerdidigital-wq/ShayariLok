@@ -82,33 +82,33 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
     listOf(
       PolicySection(
         number = "01",
-        title = "No Login & Zero Personal Data",
+        title = "One-Tap Google Sign-In",
         body =
-          "Shayari Lok is designed as a privacy-first, no-login reading app. We never ask you to create an account, sign in, or share personal details such as your name, email address, phone number, contacts, or precise location.",
+          "Shayari Lok uses Google Sign-In via Android Credential Manager so you can sync your profile, favorites, followers, and 1-on-1 chats safely without creating any separate password.",
       ),
       PolicySection(
         number = "02",
-        title = "Device Preferences & Favorites",
+        title = "Profile, Language & Preferences",
         body =
-          "Your saved favorite Shayari items and reading text size preference are stored privately on your device so your reading experience stays personalized. Clearing app data or uninstalling the app removes them immediately.",
+          "Your Google UID, display name, email (private account record), selected language/country, and reading preferences are stored securely to keep your experience personalized across sessions.",
       ),
       PolicySection(
         number = "03",
-        title = "Live Content Sync",
+        title = "Live Content & Community Sync",
         body =
-          "The app requests only standard internet access to fetch fresh Shayari updates and announcements. No analytics trackers, behavioral profiling, or invasive SDKs are included.",
+          "The app uses Firebase Cloud Firestore real-time listeners and GitHub/CDN config sync to deliver fresh Shayari updates, polls, and live community chats with zero third-party ad trackers.",
       ),
       PolicySection(
         number = "04",
-        title = "Clipboard & System Share Sheet",
+        title = "Clipboard, WhatsApp & Share Sheet",
         body =
-          "When you tap Copy or Share on a Shayari card, the app interacts only with Android's built-in Clipboard or system share chooser on your explicit action. Clipboard contents are never read in the background.",
+          "When you tap Copy, WhatsApp, or Share on a Shayari card, the app interacts only with Android's Clipboard or system/WhatsApp share chooser on your explicit action.",
       ),
       PolicySection(
         number = "05",
         title = "Updates & Contact Information",
         body =
-          "This privacy policy applies to Shayari Lok. As new features or content categories are added, any policy updates will be reflected directly inside this screen alongside the current version (${BuildConfig.VERSION_NAME}).",
+          "This privacy policy applies to Shayari Lok. Any updates will appear directly inside this screen alongside the current version (${BuildConfig.VERSION_NAME}).",
       ),
     )
 
@@ -190,7 +190,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
               )
               Spacer(modifier = Modifier.height(2.dp))
               Text(
-                text = "Privacy-First & No-Login Commitment",
+                text = "Privacy-First Google Sign-In & Cloud Sync",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
               )

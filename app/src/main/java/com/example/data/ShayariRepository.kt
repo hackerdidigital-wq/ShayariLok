@@ -6,14 +6,21 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.util.Base64
+import com.example.R
 import com.example.model.ShayariConfig
 import com.example.model.ShayariItem
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -25,6 +32,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -100,6 +108,108 @@ class ShayariRepository(context: Context) {
       .putStringSet(KEY_FAVORITE_IDS, updated.map { it.toString() }.toSet())
       .apply()
     return updated
+  }
+
+  fun getSelectedLanguageCode(): String =
+    prefs.getString(KEY_SELECTED_LANGUAGE, "hi").orEmpty().ifBlank { "hi" }
+
+  fun setSelectedLanguageCode(code: String) {
+    prefs.edit().putString(KEY_SELECTED_LANGUAGE, code.trim().lowercase()).apply()
+  }
+
+  fun getSelectedCountryCode(): String =
+    prefs.getString(KEY_SELECTED_COUNTRY, "IN").orEmpty().ifBlank { "IN" }
+
+  fun setSelectedCountryCode(code: String) {
+    prefs.edit().putString(KEY_SELECTED_COUNTRY, code.trim().uppercase()).apply()
+  }
+
+  fun getDailyStreakDays(): Int = prefs.getInt(KEY_DAILY_STREAK_COUNT, 1).coerceAtLeast(1)
+
+  fun recordDailyVisitAndGetStreak(todayKey: String = formatDateKey(Calendar.getInstance())): Int {
+    val lastKey = prefs.getString(KEY_LAST_VISIT_DATE, null)
+    val currentCount = prefs.getInt(KEY_DAILY_STREAK_COUNT, 0)
+    if (lastKey == todayKey && currentCount > 0) {
+      return currentCount
+    }
+    val nextCount =
+      if (lastKey != null && isYesterday(lastKey, todayKey)) {
+        (currentCount + 1).coerceAtLeast(1)
+      } else {
+        1
+      }
+    prefs.edit()
+      .putString(KEY_LAST_VISIT_DATE, todayKey)
+      .putInt(KEY_DAILY_STREAK_COUNT, nextCount)
+      .apply()
+    return nextCount
+  }
+
+  private fun isYesterday(previousKey: String, todayKey: String): Boolean {
+    return try {
+      val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+      val prevDate = fmt.parse(previousKey) ?: return false
+      val cal = Calendar.getInstance().apply {
+        time = prevDate
+        add(Calendar.DAY_OF_YEAR, 1)
+      }
+      formatDateKey(cal) == todayKey
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  private fun formatDateKey(cal: Calendar): String =
+    SimpleDateFormat("yyyy-MM-dd", Locale.US).format(cal.time)
+
+  fun getVotedPollOptions(): Map<String, String> {
+    val raw = prefs.getString(KEY_POLL_VOTES_JSON, null) ?: return emptyMap()
+    return try {
+      val obj = JSONObject(raw)
+      buildMap {
+        obj.keys().forEach { key ->
+          val value = obj.optString(key, "")
+          if (key.isNotBlank() && value.isNotBlank()) put(key, value)
+        }
+      }
+    } catch (_: Exception) {
+      emptyMap()
+    }
+  }
+
+  fun savePollVoteLocal(pollId: String, optionId: String) {
+    val updated = getVotedPollOptions().toMutableMap()
+    updated[pollId] = optionId
+    val obj = JSONObject()
+    updated.forEach { (k, v) -> obj.put(k, v) }
+    prefs.edit().putString(KEY_POLL_VOTES_JSON, obj.toString()).apply()
+  }
+
+  suspend fun submitPollVoteToFirestore(
+    db: FirebaseFirestore,
+    adminSiteDocId: String,
+    pollId: String,
+    optionId: String,
+    uid: String,
+  ) {
+    if (uid.isBlank() || pollId.isBlank() || optionId.isBlank()) return
+    val voteDoc = db.collection("pollVotes").document("${pollId}_$uid")
+    try {
+      voteDoc.set(
+        mapOf(
+          "pollId" to pollId,
+          "optionId" to optionId,
+          "uid" to uid,
+          "siteDocId" to adminSiteDocId,
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+        SetOptions.merge(),
+      ).await()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.WRITE, voteDoc.path)
+    }
   }
 
   suspend fun fetchRemoteConfig(
@@ -253,7 +363,57 @@ class ShayariRepository(context: Context) {
       }
     }.distinctUntilChanged()
 
-  fun observeRealtimeShayariOverlay(db: FirebaseFirestore): Flow<RealtimeShayariOverlay> {
+  fun observeRealtimeShayariOverlay(
+    db: FirebaseFirestore,
+    explicitAdminUid: String =
+      try {
+        appContext.getString(R.string.admin_uid).trim()
+      } catch (_: Exception) {
+        ""
+      },
+  ): Flow<RealtimeShayariOverlay> {
+    val publicSitesFlow =
+      flow {
+        if (explicitAdminUid.isNotBlank()) {
+          val docRef = db.collection("publicSites").document(explicitAdminUid)
+          emitAll(
+            docRef.snapshots()
+              .map { snap ->
+                val data = snap.data
+                if (!snap.exists() || data == null) {
+                  null to ""
+                } else {
+                  ShayariConfig.fromFirestoreMap(data) to snap.id
+                }
+              }
+              .catch { cause ->
+                if (cause is CancellationException) throw cause
+                handleFirestoreError(cause, OperationType.GET, docRef.path)
+                emit(null to "")
+              }
+          )
+        } else {
+          val col = db.collection("publicSites").limit(5)
+          emitAll(
+            col.snapshots()
+              .map { querySnap ->
+                val doc = querySnap.documents.firstOrNull { it.exists() && it.data != null }
+                val data = doc?.data
+                if (doc == null || data == null) {
+                  null to ""
+                } else {
+                  ShayariConfig.fromFirestoreMap(data) to doc.id
+                }
+              }
+              .catch { cause ->
+                if (cause is CancellationException) throw cause
+                handleFirestoreError(cause, OperationType.LIST, "publicSites")
+                emit(null to "")
+              }
+          )
+        }
+      }
+
     val shayarisFlow =
       flow {
         val col = db.collection("shayaris")
@@ -334,8 +494,13 @@ class ShayariRepository(context: Context) {
         )
       }
 
-    return combine(shayarisFlow, appConfigDocFlow) { items, cfg ->
-      RealtimeShayariOverlay(shayariItems = items, appConfigOverride = cfg)
+    return combine(publicSitesFlow, shayarisFlow, appConfigDocFlow) { publicPair, items, cfg ->
+      RealtimeShayariOverlay(
+        publicSiteConfig = publicPair.first,
+        publicSiteDocId = publicPair.second,
+        shayariItems = items,
+        appConfigOverride = cfg,
+      )
     }
   }
 
@@ -350,7 +515,9 @@ class ShayariRepository(context: Context) {
   )
 
   data class RealtimeShayariOverlay(
-    val shayariItems: List<com.example.model.ShayariItem> = emptyList(),
+    val publicSiteConfig: ShayariConfig? = null,
+    val publicSiteDocId: String = "",
+    val shayariItems: List<ShayariItem> = emptyList(),
     val appConfigOverride: RealtimeAppConfigOverride = RealtimeAppConfigOverride(),
   )
 
@@ -361,6 +528,11 @@ class ShayariRepository(context: Context) {
     private const val KEY_FAVORITE_IDS = "favorite_shayari_ids"
     private const val KEY_TEXT_SIZE = "shayari_text_size"
     private const val KEY_SEEN_NOTIFICATIONS_SIG = "seen_notifications_sig"
+    private const val KEY_SELECTED_LANGUAGE = "selected_language_code"
+    private const val KEY_SELECTED_COUNTRY = "selected_country_code"
+    private const val KEY_LAST_VISIT_DATE = "last_visit_date"
+    private const val KEY_DAILY_STREAK_COUNT = "daily_streak_count"
+    private const val KEY_POLL_VOTES_JSON = "poll_votes_json"
     private const val CONNECT_TIMEOUT_MS = 10000
     private const val READ_TIMEOUT_MS = 10000
   }

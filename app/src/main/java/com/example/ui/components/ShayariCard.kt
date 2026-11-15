@@ -69,8 +69,10 @@ fun ShayariCard(
   item: ShayariItem,
   isFavorite: Boolean,
   textSize: ShayariTextSize = ShayariTextSize.MEDIUM,
+  whatsappShareEnabled: Boolean = true,
   onCopyClick: (ShayariItem) -> Unit,
   onShareClick: (ShayariItem) -> Unit,
+  onWhatsAppClick: (ShayariItem) -> Unit = onShareClick,
   onFavoriteToggle: (Int) -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -284,6 +286,16 @@ fun ShayariCard(
             },
           )
           Spacer(modifier = Modifier.width(2.dp))
+          if (whatsappShareEnabled) {
+            CardIconAction(
+              iconRes = R.drawable.ic_whatsapp,
+              contentDescription = stringResource(R.string.action_whatsapp_share),
+              tint = Color(0xFF4ADE80),
+              iconScale = 1f,
+              testTag = "whatsapp_button_${item.id}",
+              onClick = { onWhatsAppClick(item) },
+            )
+          }
           CardIconAction(
             iconRes = R.drawable.ic_share,
             contentDescription = stringResource(R.string.action_share),
