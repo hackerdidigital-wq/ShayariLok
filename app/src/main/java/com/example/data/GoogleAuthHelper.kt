@@ -9,6 +9,7 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import com.example.R
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -37,12 +38,20 @@ object GoogleAuthHelper {
     awaitClose { removeAuthStateListener(listener) }
   }
 
+  private const val FALLBACK_WEB_CLIENT_ID =
+    "663704095886-21iunr4j2kfkuor3i8u6gak5fem1ihsk.apps.googleusercontent.com"
+
   @SuppressLint("DiscouragedApi")
-  private fun resolveWebClientId(context: Context): String? {
-    val resId =
+  internal fun resolveWebClientId(context: Context): String {
+    val googleServicesResId =
       context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-    if (resId == 0) return null
-    return runCatching { context.getString(resId) }.getOrNull()?.takeIf { it.isNotBlank() }
+    if (googleServicesResId != 0) {
+      val resolved = runCatching { context.getString(googleServicesResId) }.getOrNull()?.trim()
+      if (!resolved.isNullOrBlank()) return resolved
+    }
+    val xmlFallback = runCatching { context.getString(R.string.fallback_web_client_id) }.getOrNull()?.trim()
+    if (!xmlFallback.isNullOrBlank()) return xmlFallback
+    return FALLBACK_WEB_CLIENT_ID
   }
 
   fun attemptAutoSignIn(
@@ -56,12 +65,7 @@ object GoogleAuthHelper {
       onAuthSuccess()
       return
     }
-    val clientId =
-      resolveWebClientId(context)
-        ?: run {
-          onUnauthenticated()
-          return
-        }
+    val clientId = resolveWebClientId(context)
 
     val googleIdOption =
       GetGoogleIdOption.Builder()
@@ -98,12 +102,7 @@ object GoogleAuthHelper {
     scope: CoroutineScope,
     onAuthCancelled: () -> Unit = {},
   ) {
-    val clientId =
-      resolveWebClientId(context)
-        ?: run {
-          onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
-          return
-        }
+    val clientId = resolveWebClientId(context)
 
     val activityContext = context as? Activity
     if (activityContext == null) {

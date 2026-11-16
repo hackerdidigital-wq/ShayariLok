@@ -464,4 +464,14 @@ class ExampleRobolectricTest {
     repo.savePollVoteLocal("poll_1", "love")
     assertEquals("love", repo.getVotedPollOptions()["poll_1"])
   }
+
+  @Test
+  fun `GoogleAuthHelper resolves valid OAuth Web Client ID without missing error`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val clientId = com.example.data.GoogleAuthHelper.resolveWebClientId(app)
+    assertEquals(
+      "663704095886-21iunr4j2kfkuor3i8u6gak5fem1ihsk.apps.googleusercontent.com",
+      clientId,
+    )
+  }
 }

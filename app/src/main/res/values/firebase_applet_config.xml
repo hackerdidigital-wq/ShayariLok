@@ -2,4 +2,5 @@
 <resources>
     <string name="firestore_database_id" translatable="false">ai-studio-f7f3be7b-496c-4d08-bf57-38a268f047a4</string>
     <string name="admin_uid" translatable="false"></string>
+    <string name="fallback_web_client_id" translatable="false">663704095886-21iunr4j2kfkuor3i8u6gak5fem1ihsk.apps.googleusercontent.com</string>
 </resources>
