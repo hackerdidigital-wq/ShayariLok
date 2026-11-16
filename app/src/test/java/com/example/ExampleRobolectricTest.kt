@@ -466,12 +466,23 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `GoogleAuthHelper resolves valid OAuth Web Client ID without missing error`() {
+  fun `GoogleAuthHelper resolves valid OAuth Web Client ID and classifies cancellation diagnostics`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
     val clientId = com.example.data.GoogleAuthHelper.resolveWebClientId(app)
-    assertEquals(
-      "663704095886-21iunr4j2kfkuor3i8u6gak5fem1ihsk.apps.googleusercontent.com",
-      clientId,
-    )
+    assertEquals(app.getString(R.string.default_web_client_id), clientId)
+    assertTrue(clientId!!.isNotBlank())
+
+    val devError =
+      androidx.credentials.exceptions.GetCredentialCancellationException(
+        "16: [28444] Developer console is not set up correctly."
+      )
+    val devDiagnostic = com.example.data.GoogleAuthHelper.classifyCancellationDiagnostic(devError)
+    assertTrue(devDiagnostic != null && devDiagnostic.contains("SHA-1"))
+
+    val manualCancel =
+      androidx.credentials.exceptions.GetCredentialCancellationException(
+        "activity is cancelled by the user."
+      )
+    assertEquals(null, com.example.data.GoogleAuthHelper.classifyCancellationDiagnostic(manualCancel))
   }
 }

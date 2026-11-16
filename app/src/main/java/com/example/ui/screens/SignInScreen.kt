@@ -70,7 +70,8 @@ fun SignInScreen(
 ) {
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
-  val credentialManager = remember(context) { CredentialManager.create(context) }
+  val credentialManager =
+    remember(context.applicationContext) { CredentialManager.create(context.applicationContext) }
 
   var isLoading by remember { mutableStateOf(false) }
   var isCheckingAutoSignIn by remember { mutableStateOf(true) }
@@ -213,7 +214,6 @@ fun SignInScreen(
               scope = coroutineScope,
               onAuthCancelled = {
                 isLoading = false
-                errorMessage = "Sign-in was cancelled. Please select a Google account to continue."
               },
             )
           },
