@@ -70,8 +70,7 @@ fun SignInScreen(
 ) {
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
-  val credentialManager =
-    remember(context.applicationContext) { CredentialManager.create(context.applicationContext) }
+  val credentialManager = remember(context) { CredentialManager.create(context) }
 
   var isLoading by remember { mutableStateOf(false) }
   var isCheckingAutoSignIn by remember { mutableStateOf(true) }
@@ -212,8 +211,11 @@ fun SignInScreen(
                 errorMessage = msg
               },
               scope = coroutineScope,
-              onAuthCancelled = {
+              onAuthCancelled = { hintMessage ->
                 isLoading = false
+                if (!hintMessage.isNullOrBlank()) {
+                  errorMessage = hintMessage
+                }
               },
             )
           },

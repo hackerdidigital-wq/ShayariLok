@@ -10,3 +10,10 @@
 -keepattributes *Annotation*,Signature,SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
 -keep class com.example.model.** { *; }
+-keep class androidx.credentials.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }
+-keep class com.google.firebase.auth.** { *; }
+-keep class com.google.android.gms.auth.** { *; }
+-keepclassmembers class * implements android.os.Parcelable {
+    public static final ** CREATOR;
+}
