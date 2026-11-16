@@ -57,12 +57,9 @@ import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgeBlue
 import com.example.ui.theme.BadgePink
 import com.example.ui.theme.BadgePurple
-import com.example.ui.theme.CrownGold
-import com.example.ui.theme.DarkSurface
-import com.example.ui.theme.DarkSurfaceVariant
+import com.example.ui.theme.LocalShayariColors
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
-import com.example.ui.theme.NeonVioletGlow
 
 @Composable
 fun SocialCommunityScreen(
@@ -81,6 +78,7 @@ fun SocialCommunityScreen(
   modifier: Modifier = Modifier,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
 
   Column(
     modifier = modifier.fillMaxSize(),
@@ -97,14 +95,14 @@ fun SocialCommunityScreen(
         placeholder = {
           Text(
             text = strings.searchFriendsHint,
-            color = Color.White.copy(alpha = 0.65f),
+            color = palette.textMuted,
           )
         },
         leadingIcon = {
           Icon(
             painter = painterResource(id = R.drawable.ic_search),
             contentDescription = null,
-            tint = CrownGold,
+            tint = palette.accentGold,
             modifier = Modifier.size(20.dp),
           )
         },
@@ -115,7 +113,7 @@ fun SocialCommunityScreen(
           ) {
             if (uiState.isSearchingRemote || uiState.isBootstrapping) {
               CircularProgressIndicator(
-                color = CrownGold,
+                color = palette.accentGold,
                 strokeWidth = 2.dp,
                 modifier = Modifier.size(18.dp),
               )
@@ -123,7 +121,7 @@ fun SocialCommunityScreen(
               Icon(
                 painter = painterResource(id = R.drawable.ic_refresh),
                 contentDescription = strings.refreshUsers,
-                tint = CrownGold,
+                tint = palette.accentGold,
                 modifier = Modifier.size(18.dp),
               )
             }
@@ -132,12 +130,12 @@ fun SocialCommunityScreen(
         shape = RoundedCornerShape(16.dp),
         colors =
           OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = CrownGold,
-            unfocusedBorderColor = NeonVioletGlow.copy(alpha = 0.45f),
-            focusedTextColor = Color.White,
-            unfocusedTextColor = Color.White,
-            focusedContainerColor = DarkSurface.copy(alpha = 0.85f),
-            unfocusedContainerColor = DarkSurface.copy(alpha = 0.72f),
+            focusedBorderColor = palette.accentGold,
+            unfocusedBorderColor = palette.outline.copy(alpha = 0.65f),
+            focusedTextColor = palette.textPrimary,
+            unfocusedTextColor = palette.textPrimary,
+            focusedContainerColor = palette.surface.copy(alpha = 0.94f),
+            unfocusedContainerColor = palette.surface.copy(alpha = 0.84f),
           ),
         modifier = Modifier.fillMaxWidth().testTag("community_search_input"),
       )
@@ -145,8 +143,8 @@ fun SocialCommunityScreen(
       if (uiState.isSearchingRemote) {
         Spacer(modifier = Modifier.height(6.dp))
         LinearProgressIndicator(
-          color = CrownGold,
-          trackColor = DarkSurfaceVariant,
+          color = palette.accentGold,
+          trackColor = palette.surfaceVariant,
           modifier = Modifier.fillMaxWidth().height(2.dp),
         )
       }
@@ -283,13 +281,14 @@ private fun CommunityFilterChip(
   testTag: String,
   onClick: () -> Unit,
 ) {
+  val palette = LocalShayariColors.current
   Surface(
     shape = RoundedCornerShape(50),
-    color = if (selected) BadgePurple else DarkSurfaceVariant,
+    color = if (selected) palette.chipSelectedBg else palette.chipUnselectedBg,
     border =
       BorderStroke(
         1.dp,
-        if (selected) CrownGold.copy(alpha = 0.8f) else NeonVioletGlow.copy(alpha = 0.35f),
+        if (selected) palette.accentGold.copy(alpha = 0.85f) else palette.outline.copy(alpha = 0.65f),
       ),
     modifier =
       Modifier.clip(RoundedCornerShape(50))
@@ -301,7 +300,7 @@ private fun CommunityFilterChip(
       text = label,
       style = MaterialTheme.typography.labelLarge,
       fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-      color = Color.White,
+      color = if (selected) palette.chipSelectedText else palette.chipUnselectedText,
       modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
     )
   }
@@ -319,10 +318,11 @@ private fun FriendProfileCard(
   onChatClick: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   Surface(
     shape = RoundedCornerShape(20.dp),
-    color = DarkSurface.copy(alpha = 0.92f),
-    border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.32f)),
+    color = palette.surface.copy(alpha = 0.96f),
+    border = BorderStroke(1.dp, palette.outline.copy(alpha = 0.65f)),
     tonalElevation = 2.dp,
     modifier =
       Modifier.fillMaxWidth()
@@ -350,7 +350,7 @@ private fun FriendProfileCard(
               text = user.displayName.ifBlank { "Shayari Lover" },
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
-              color = Color.White,
+              color = palette.textPrimary,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
               modifier = Modifier.weight(1f, fill = false),
@@ -358,14 +358,14 @@ private fun FriendProfileCard(
             Spacer(modifier = Modifier.width(6.dp))
             Surface(
               shape = RoundedCornerShape(8.dp),
-              color = DarkSurfaceVariant,
-              border = BorderStroke(0.8.dp, CrownGold.copy(alpha = 0.55f)),
+              color = palette.pillSurface,
+              border = BorderStroke(0.8.dp, palette.accentGold.copy(alpha = 0.6f)),
               modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onCopyHandle),
             ) {
               Text(
                 text = user.effectiveHandle,
                 style = MaterialTheme.typography.labelSmall,
-                color = CrownGold,
+                color = palette.accentGold,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
               )
@@ -378,14 +378,14 @@ private fun FriendProfileCard(
               Icon(
                 painter = painterResource(id = R.drawable.ic_location),
                 contentDescription = null,
-                tint = Color(0xFFD2C4EB),
+                tint = palette.textSecondary,
                 modifier = Modifier.size(13.dp),
               )
               Spacer(modifier = Modifier.width(4.dp))
               Text(
                 text = user.city,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFFD2C4EB),
+                color = palette.textSecondary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
@@ -399,7 +399,7 @@ private fun FriendProfileCard(
         Text(
           text = user.bio,
           style = MaterialTheme.typography.bodySmall,
-          color = Color.White.copy(alpha = 0.85f),
+          color = palette.textPrimary.copy(alpha = 0.85f),
           maxLines = 2,
           overflow = TextOverflow.Ellipsis,
         )
@@ -415,7 +415,7 @@ private fun FriendProfileCard(
         Text(
           text = "${user.followersCount} ${strings.followersLabel} • ${user.effectiveLikesCount} ${strings.likesLabel}",
           style = MaterialTheme.typography.labelSmall,
-          color = Color(0xFFD2C4EB),
+          color = palette.textSecondary,
           modifier = Modifier.weight(1f),
         )
 
@@ -425,7 +425,7 @@ private fun FriendProfileCard(
           border =
             BorderStroke(
               1.dp,
-              if (isLiked) NeonPink else NeonVioletGlow.copy(alpha = 0.45f),
+              if (isLiked) NeonPink else palette.outline.copy(alpha = 0.65f),
             ),
           contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
           modifier =
@@ -437,7 +437,7 @@ private fun FriendProfileCard(
                 id = if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart
               ),
             contentDescription = strings.likesLabel,
-            tint = if (isLiked) NeonPink else Color.White,
+            tint = if (isLiked) NeonPink else palette.textPrimary,
             modifier = Modifier.size(16.dp),
           )
         }
@@ -447,8 +447,8 @@ private fun FriendProfileCard(
           shape = RoundedCornerShape(12.dp),
           colors =
             ButtonDefaults.buttonColors(
-              containerColor = if (isFollowing) DarkSurfaceVariant else BadgePurple,
-              contentColor = Color.White,
+              containerColor = if (isFollowing) palette.surfaceVariant else BadgePurple,
+              contentColor = if (isFollowing) palette.textPrimary else Color.White,
             ),
           contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
           modifier =
@@ -493,13 +493,14 @@ fun ChatThreadPreviewCard(
   onClick: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   val partnerName = room.partnerName.ifBlank { "Shayar Friend" }
   val partnerHandle = room.partnerHandle.ifBlank { "@SL_USER" }
 
   Surface(
     shape = RoundedCornerShape(18.dp),
-    color = DarkSurface.copy(alpha = 0.92f),
-    border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.35f)),
+    color = palette.surface.copy(alpha = 0.96f),
+    border = BorderStroke(1.dp, palette.outline.copy(alpha = 0.65f)),
     modifier =
       Modifier.fillMaxWidth()
         .clip(RoundedCornerShape(18.dp))
@@ -524,7 +525,7 @@ fun ChatThreadPreviewCard(
             text = partnerName,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = palette.textPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
@@ -532,14 +533,14 @@ fun ChatThreadPreviewCard(
           Text(
             text = partnerHandle,
             style = MaterialTheme.typography.labelSmall,
-            color = CrownGold,
+            color = palette.accentGold,
           )
         }
         Spacer(modifier = Modifier.height(3.dp))
         Text(
           text = room.lastMessage.ifBlank { strings.tapToOpenChat },
           style = MaterialTheme.typography.bodySmall,
-          color = Color(0xFFD2C4EB),
+          color = palette.textSecondary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
@@ -547,7 +548,7 @@ fun ChatThreadPreviewCard(
       Icon(
         painter = painterResource(id = R.drawable.ic_chat),
         contentDescription = strings.chatAction,
-        tint = CrownGold,
+        tint = palette.accentGold,
         modifier = Modifier.size(20.dp),
       )
     }
@@ -565,9 +566,10 @@ private fun UserProfileDetailDialog(
   onStartChat: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   AlertDialog(
     onDismissRequest = onDismiss,
-    containerColor = DarkSurface,
+    containerColor = palette.surface,
     shape = RoundedCornerShape(24.dp),
     title = {
       Column(
@@ -584,16 +586,16 @@ private fun UserProfileDetailDialog(
         Spacer(modifier = Modifier.height(10.dp))
         Text(
           text = user.displayName.ifBlank { "Shayari Lover" },
-          color = Color.White,
+          color = palette.textPrimary,
           fontWeight = FontWeight.Bold,
         )
         Spacer(modifier = Modifier.height(4.dp))
-        Text(text = user.effectiveHandle, color = CrownGold, style = MaterialTheme.typography.labelLarge)
+        Text(text = user.effectiveHandle, color = palette.accentGold, style = MaterialTheme.typography.labelLarge)
         if (user.city.isNotBlank()) {
           Spacer(modifier = Modifier.height(4.dp))
           Text(
             text = user.city,
-            color = Color(0xFFD2C4EB),
+            color = palette.textSecondary,
             style = MaterialTheme.typography.bodySmall,
           )
         }
@@ -607,7 +609,7 @@ private fun UserProfileDetailDialog(
         if (user.bio.isNotBlank()) {
           Text(
             text = user.bio,
-            color = Color.White.copy(alpha = 0.9f),
+            color = palette.textPrimary.copy(alpha = 0.9f),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
           )
@@ -631,7 +633,7 @@ private fun UserProfileDetailDialog(
         OutlinedButton(
           onClick = onToggleLike,
           shape = RoundedCornerShape(12.dp),
-          border = BorderStroke(1.dp, if (isLiked) NeonPink else CrownGold.copy(alpha = 0.6f)),
+          border = BorderStroke(1.dp, if (isLiked) NeonPink else palette.accentGold.copy(alpha = 0.65f)),
           modifier = Modifier.minimumInteractiveComponentSize(),
         ) {
           Icon(
@@ -640,7 +642,7 @@ private fun UserProfileDetailDialog(
                 id = if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart
               ),
             contentDescription = strings.likesLabel,
-            tint = if (isLiked) NeonPink else Color.White,
+            tint = if (isLiked) NeonPink else palette.textPrimary,
             modifier = Modifier.size(16.dp),
           )
         }
@@ -649,11 +651,12 @@ private fun UserProfileDetailDialog(
           shape = RoundedCornerShape(12.dp),
           colors =
             ButtonDefaults.buttonColors(
-              containerColor = if (isFollowing) DarkSurfaceVariant else BadgePurple
+              containerColor = if (isFollowing) palette.surfaceVariant else BadgePurple,
+              contentColor = if (isFollowing) palette.textPrimary else Color.White,
             ),
           modifier = Modifier.weight(1f).minimumInteractiveComponentSize(),
         ) {
-          Text(if (isFollowing) strings.followingAction else strings.followAction, color = Color.White)
+          Text(if (isFollowing) strings.followingAction else strings.followAction)
         }
         Button(
           onClick = onStartChat,
@@ -667,7 +670,7 @@ private fun UserProfileDetailDialog(
     },
     dismissButton = {
       TextButton(onClick = onDismiss) {
-        Text(strings.closeAction, color = Color(0xFFD2C4EB))
+        Text(strings.closeAction, color = palette.textSecondary)
       }
     },
   )
@@ -675,14 +678,15 @@ private fun UserProfileDetailDialog(
 
 @Composable
 private fun ProfileStatColumn(label: String, count: Long) {
+  val palette = LocalShayariColors.current
   Column(horizontalAlignment = Alignment.CenterHorizontally) {
     Text(
       text = count.toString(),
       style = MaterialTheme.typography.titleMedium,
       fontWeight = FontWeight.ExtraBold,
-      color = CrownGold,
+      color = palette.accentGold,
     )
-    Text(text = label, style = MaterialTheme.typography.labelSmall, color = Color(0xFFD2C4EB))
+    Text(text = label, style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
   }
 }
 
@@ -696,6 +700,7 @@ private fun CommunityEmptyBox(
   secondaryCtaLabel: String?,
   onSecondaryCta: (() -> Unit)?,
 ) {
+  val palette = LocalShayariColors.current
   Column(
     modifier = Modifier.fillMaxSize().padding(24.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
@@ -703,15 +708,15 @@ private fun CommunityEmptyBox(
   ) {
     Surface(
       shape = CircleShape,
-      color = NeonPurple.copy(alpha = 0.25f),
-      border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.45f)),
+      color = palette.accentPurple.copy(alpha = 0.2f),
+      border = BorderStroke(1.dp, palette.accentViolet.copy(alpha = 0.45f)),
       modifier = Modifier.size(64.dp),
     ) {
       Box(contentAlignment = Alignment.Center) {
         Icon(
           painter = painterResource(id = iconRes),
           contentDescription = null,
-          tint = CrownGold,
+          tint = palette.accentGold,
           modifier = Modifier.size(28.dp),
         )
       }
@@ -720,14 +725,14 @@ private fun CommunityEmptyBox(
     Text(
       text = title,
       style = MaterialTheme.typography.titleLarge,
-      color = Color.White,
+      color = palette.textPrimary,
       textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(6.dp))
     Text(
       text = subtitle,
       style = MaterialTheme.typography.bodyMedium,
-      color = Color(0xFFD2C4EB),
+      color = palette.textSecondary,
       textAlign = TextAlign.Center,
       modifier = Modifier.widthIn(max = 320.dp),
     )
@@ -752,17 +757,17 @@ private fun CommunityEmptyBox(
         OutlinedButton(
           onClick = onSecondaryCta,
           shape = RoundedCornerShape(14.dp),
-          border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.65f)),
+          border = BorderStroke(1.dp, palette.accentGold.copy(alpha = 0.65f)),
           modifier = Modifier.minimumInteractiveComponentSize().testTag("empty_invite_friends_button"),
         ) {
           Icon(
             painter = painterResource(id = R.drawable.ic_share),
             contentDescription = null,
-            tint = CrownGold,
+            tint = palette.accentGold,
             modifier = Modifier.size(16.dp),
           )
           Spacer(modifier = Modifier.width(6.dp))
-          Text(secondaryCtaLabel, color = CrownGold, fontWeight = FontWeight.SemiBold)
+          Text(secondaryCtaLabel, color = palette.accentGold, fontWeight = FontWeight.SemiBold)
         }
       }
     }

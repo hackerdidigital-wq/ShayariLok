@@ -68,6 +68,8 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -85,6 +87,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -95,12 +98,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.R
 import com.example.data.ShayariTextSize
+import com.example.data.rememberShayariImageBitmap
 import com.example.model.PublicProfile
 import com.example.model.ShayariItem
 import com.example.ui.MainTab
 import com.example.ui.ShayariScreenState
+import com.example.ui.components.AdMobBannerCard
 import com.example.ui.components.DailyStreakAndLocaleBar
 import com.example.ui.components.LanguageCountrySelectorDialog
 import com.example.ui.components.LivePollCard
@@ -109,16 +115,10 @@ import com.example.ui.components.UserAvatar
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.CrownGold
-import com.example.ui.theme.DarkSurface
-import com.example.ui.theme.DarkSurfaceVariant
-import com.example.ui.theme.DeepRoyalPurple
+import com.example.ui.theme.LocalShayariColors
 import kotlinx.coroutines.launch
-import com.example.ui.theme.HeaderPurpleEnd
-import com.example.ui.theme.HeaderPurpleStart
-import com.example.ui.theme.MidnightIndigo
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
-import com.example.ui.theme.NeonVioletGlow
 import com.example.ui.theme.parseHexColorOrNull
 import kotlin.math.PI
 import kotlin.math.cos
@@ -139,6 +139,8 @@ fun HomeScreen(
   votedPollOptions: Map<String, String> = emptyMap(),
   myProfile: PublicProfile? = null,
   userEmail: String = "",
+  isDarkTheme: Boolean = true,
+  onToggleTheme: () -> Unit = {},
   onSignOutClick: () -> Unit = {},
   onSelectCategory: (String) -> Unit,
   onSelectTab: (MainTab) -> Unit,
@@ -146,6 +148,8 @@ fun HomeScreen(
   onSearchQueryChange: (String) -> Unit,
   onRefreshClick: () -> Unit,
   onNotificationsClick: () -> Unit,
+  onOpenFaqClick: () -> Unit = {},
+  onOpenPrivacyPolicyClick: () -> Unit = {},
   onSettingsClick: () -> Unit,
   onShareAppClick: () -> Unit,
   onOpenCommunityClick: (String) -> Unit,
@@ -160,10 +164,12 @@ fun HomeScreen(
   socialTabContent: @Composable (tab: MainTab, openLocalePicker: () -> Unit) -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
   val coroutineScope = rememberCoroutineScope()
   var showLocaleDialog by remember { mutableStateOf(false) }
   var showAgeConfirmDialog by remember { mutableStateOf(false) }
+  val customLogoBitmap = rememberShayariImageBitmap(readyState.config.appLogoUrl)
 
   BackHandler(enabled = drawerState.isOpen) {
     coroutineScope.launch { drawerState.close() }
@@ -208,23 +214,25 @@ fun HomeScreen(
     drawerContent = {
       ShayariSideDrawerSheet(
         appName = readyState.config.appName,
+        appLogoUrl = readyState.config.appLogoUrl,
         socialLink = readyState.config.socialLink,
-        activeTab = readyState.activeTab,
         myProfile = myProfile,
         userEmail = userEmail,
         unreadNotificationCount = unreadNotificationCount,
         isRefreshing = isRefreshing,
+        isDarkTheme = isDarkTheme,
         selectedLanguageCode = selectedLanguageCode,
         selectedCountryCode = selectedCountryCode,
         onCloseDrawer = { coroutineScope.launch { drawerState.close() } },
-        onSelectTab = { tab ->
+        onOpenProfileClick = {
           coroutineScope.launch { drawerState.close() }
-          onSelectTab(tab)
+          onSelectTab(MainTab.PROFILE)
         },
         onNotificationsClick = {
           coroutineScope.launch { drawerState.close() }
           onNotificationsClick()
         },
+        onToggleTheme = onToggleTheme,
         onRefreshClick = {
           coroutineScope.launch { drawerState.close() }
           onRefreshClick()
@@ -232,6 +240,14 @@ fun HomeScreen(
         onOpenLocaleClick = {
           coroutineScope.launch { drawerState.close() }
           showLocaleDialog = true
+        },
+        onOpenFaqClick = {
+          coroutineScope.launch { drawerState.close() }
+          onOpenFaqClick()
+        },
+        onOpenPrivacyPolicyClick = {
+          coroutineScope.launch { drawerState.close() }
+          onOpenPrivacyPolicyClick()
         },
         onSettingsClick = {
           coroutineScope.launch { drawerState.close() }
@@ -257,7 +273,7 @@ fun HomeScreen(
       Modifier.fillMaxSize()
         .background(
           Brush.verticalGradient(
-            colors = listOf(DeepRoyalPurple, MidnightIndigo, Color(0xFF120624))
+            colors = listOf(palette.bgTop, palette.bgMid, palette.bgBottom)
           )
         )
   ) {
@@ -301,8 +317,8 @@ fun HomeScreen(
         ) { data ->
           Snackbar(
             shape = RoundedCornerShape(14.dp),
-            containerColor = Color(0xFF2E0D63),
-            contentColor = Color.White,
+            containerColor = palette.snackBg,
+            contentColor = palette.snackText,
             modifier = Modifier.padding(bottom = 4.dp),
           ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -316,7 +332,7 @@ fun HomeScreen(
               Text(
                 text = data.visuals.message,
                 style = MaterialTheme.typography.labelLarge,
-                color = Color.White,
+                color = palette.snackText,
               )
             }
           }
@@ -324,8 +340,8 @@ fun HomeScreen(
       },
       topBar = {
         val dynamicPrimary = parseHexColorOrNull(readyState.config.dynamicTheme.primaryHex)
-        val headerStart = dynamicPrimary ?: HeaderPurpleStart
-        val headerEnd = dynamicPrimary?.copy(alpha = 0.85f) ?: HeaderPurpleEnd
+        val headerStart = dynamicPrimary ?: palette.headerStart
+        val headerEnd = dynamicPrimary?.copy(alpha = 0.88f) ?: palette.headerEnd
         Column(
           modifier =
             Modifier.fillMaxWidth()
@@ -347,7 +363,7 @@ fun HomeScreen(
               onClick = { coroutineScope.launch { drawerState.open() } },
             )
 
-            // Center Crown + "Live Shayari / Shayari Lok" branding
+            // Center Crown / Custom Admin Logo + "Live Shayari / App Name" branding
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
               Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -365,11 +381,20 @@ fun HomeScreen(
                           CircleShape,
                         )
                   )
-                  Image(
-                    painter = painterResource(id = R.drawable.ic_crown),
-                    contentDescription = null,
-                    modifier = Modifier.size(28.dp),
-                  )
+                  if (customLogoBitmap != null) {
+                    Image(
+                      bitmap = customLogoBitmap,
+                      contentDescription = readyState.config.appName,
+                      contentScale = ContentScale.Crop,
+                      modifier = Modifier.size(30.dp).clip(CircleShape),
+                    )
+                  } else {
+                    Image(
+                      painter = painterResource(id = R.drawable.ic_crown),
+                      contentDescription = null,
+                      modifier = Modifier.size(28.dp),
+                    )
+                  }
                 }
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
@@ -480,7 +505,7 @@ fun HomeScreen(
       Row(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
         if (isExpandedWidth) {
           NavigationRail(
-            containerColor = Color.White,
+            containerColor = palette.bottomBarBg,
             modifier = Modifier.fillMaxHeight().navigationBarsPadding(),
           ) {
             Spacer(modifier = Modifier.height(12.dp))
@@ -570,13 +595,13 @@ fun HomeScreen(
                 val chipInteraction = remember { MutableInteractionSource() }
                 val chipBg by
                   animateColorAsState(
-                    targetValue = if (isSelected) BadgePurple else Color(0xFFF3EEFF),
+                    targetValue = if (isSelected) palette.chipSelectedBg else palette.chipUnselectedBg,
                     animationSpec = tween(durationMillis = 200),
                     label = "chipBg",
                   )
                 val chipTextColor by
                   animateColorAsState(
-                    targetValue = if (isSelected) Color.White else Color(0xFF2F145E),
+                    targetValue = if (isSelected) palette.chipSelectedText else palette.chipUnselectedText,
                     animationSpec = tween(durationMillis = 200),
                     label = "chipTextColor",
                   )
@@ -591,9 +616,9 @@ fun HomeScreen(
                   color = chipBg,
                   border =
                     if (isSelected) {
-                      BorderStroke(1.2.dp, NeonVioletGlow.copy(alpha = 0.85f))
+                      BorderStroke(1.2.dp, palette.accentViolet.copy(alpha = 0.85f))
                     } else {
-                      BorderStroke(0.8.dp, Color.White.copy(alpha = 0.35f))
+                      BorderStroke(0.8.dp, palette.outline.copy(alpha = 0.55f))
                     },
                   shadowElevation = if (isSelected) 6.dp else 1.dp,
                   modifier =
@@ -672,6 +697,21 @@ fun HomeScreen(
                     )
                   }
                 }
+                if (
+                  readyState.activeTab == MainTab.EXPLORE &&
+                    readyState.config.adsEnabled &&
+                    readyState.config.bannerAdId.isNotBlank()
+                ) {
+                  item(
+                    key = "admob_banner_grid",
+                    span = { GridItemSpan(gridColumns) },
+                  ) {
+                    AdMobBannerCard(
+                      adsEnabled = readyState.config.adsEnabled,
+                      bannerAdId = readyState.config.bannerAdId,
+                    )
+                  }
+                }
                 items(items, key = { it.id }) { item ->
                   ShayariCard(
                     item = item,
@@ -710,6 +750,14 @@ fun HomeScreen(
                       SafeModeNoticeBanner(
                         hiddenCount = readyState.hiddenAdultCount,
                         onUnlockClick = { showAgeConfirmDialog = true },
+                      )
+                    }
+                  }
+                  if (readyState.config.adsEnabled && readyState.config.bannerAdId.isNotBlank()) {
+                    item(key = "admob_banner_top") {
+                      AdMobBannerCard(
+                        adsEnabled = readyState.config.adsEnabled,
+                        bannerAdId = readyState.config.bannerAdId,
                       )
                     }
                   }
@@ -776,10 +824,11 @@ private fun SafeModeNoticeBanner(
   onUnlockClick: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   Surface(
     shape = RoundedCornerShape(16.dp),
-    color = Color(0xFF28114A),
-    border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.45f)),
+    color = palette.surface.copy(alpha = 0.94f),
+    border = BorderStroke(1.dp, palette.accentGold.copy(alpha = 0.55f)),
     modifier = Modifier.fillMaxWidth().testTag("safe_mode_banner"),
   ) {
     Row(
@@ -794,27 +843,27 @@ private fun SafeModeNoticeBanner(
         Icon(
           painter = painterResource(id = R.drawable.ic_shield),
           contentDescription = null,
-          tint = CrownGold,
+          tint = palette.accentGold,
           modifier = Modifier.size(18.dp),
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
           text = "${strings.safeModeActiveBanner} $hiddenCount",
           style = MaterialTheme.typography.labelMedium,
-          color = Color(0xFFE7DAF8),
+          color = palette.textPrimary,
         )
       }
       OutlinedButton(
         onClick = onUnlockClick,
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.7f)),
+        border = BorderStroke(1.dp, palette.accentGold.copy(alpha = 0.7f)),
         modifier = Modifier.minimumInteractiveComponentSize().testTag("unlock_18_plus_banner_button"),
       ) {
         Text(
           text = strings.unlock18PlusCta,
           style = MaterialTheme.typography.labelSmall,
           fontWeight = FontWeight.Bold,
-          color = CrownGold,
+          color = palette.accentGold,
         )
       }
     }
@@ -902,13 +951,14 @@ private fun CleanWhiteBottomBar(
   onSelectTab: (MainTab) -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   Surface(
-    color = Color.White,
+    color = palette.bottomBarBg,
     shadowElevation = 8.dp,
     modifier = Modifier.fillMaxWidth(),
   ) {
     Column {
-      HorizontalDivider(color = Color(0xFFEAE6F3), thickness = 0.8.dp)
+      HorizontalDivider(color = palette.bottomBarDivider, thickness = 0.8.dp)
       Row(
         modifier =
           Modifier.fillMaxWidth()
@@ -969,9 +1019,10 @@ private fun BottomBarTabItem(
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val palette = LocalShayariColors.current
   val interactionSource = remember { MutableInteractionSource() }
-  val activeColor = BadgePurple
-  val inactiveColor = Color(0xFF7B758A)
+  val activeColor = palette.accentPurple
+  val inactiveColor = palette.textMuted
   val tint = if (selected) activeColor else inactiveColor
 
   Column(
@@ -1029,6 +1080,7 @@ private fun EmptyShayariState(
   modifier: Modifier = Modifier,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   Column(
     modifier = modifier,
     horizontalAlignment = Alignment.CenterHorizontally,
@@ -1036,8 +1088,8 @@ private fun EmptyShayariState(
   ) {
     Surface(
       shape = CircleShape,
-      color = NeonPurple.copy(alpha = 0.25f),
-      border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.45f)),
+      color = palette.accentPurple.copy(alpha = 0.2f),
+      border = BorderStroke(1.dp, palette.accentViolet.copy(alpha = 0.45f)),
       modifier = Modifier.size(64.dp),
     ) {
       Box(contentAlignment = Alignment.Center) {
@@ -1047,7 +1099,7 @@ private fun EmptyShayariState(
               id = if (isFavoritesTab) R.drawable.ic_heart_filled else R.drawable.ic_category
             ),
           contentDescription = null,
-          tint = CrownGold,
+          tint = palette.accentGold,
           modifier = Modifier.size(28.dp),
         )
       }
@@ -1057,7 +1109,7 @@ private fun EmptyShayariState(
       text =
         if (isFavoritesTab) strings.emptyFavoritesTitle else strings.emptyCategoryTitle,
       style = MaterialTheme.typography.titleLarge,
-      color = Color.White,
+      color = palette.textPrimary,
       textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(6.dp))
@@ -1069,7 +1121,7 @@ private fun EmptyShayariState(
           strings.emptyCategorySubtitle
         },
       style = MaterialTheme.typography.bodyMedium,
-      color = Color(0xFFD2C4EB),
+      color = palette.textSecondary,
       textAlign = TextAlign.Center,
       modifier = Modifier.widthIn(max = 300.dp),
     )
@@ -1079,87 +1131,107 @@ private fun EmptyShayariState(
 @Composable
 private fun ShayariSideDrawerSheet(
   appName: String,
+  appLogoUrl: String,
   socialLink: String,
-  activeTab: MainTab,
   myProfile: PublicProfile?,
   userEmail: String,
   unreadNotificationCount: Int,
   isRefreshing: Boolean,
+  isDarkTheme: Boolean,
   selectedLanguageCode: String,
   selectedCountryCode: String,
   onCloseDrawer: () -> Unit,
-  onSelectTab: (MainTab) -> Unit,
+  onOpenProfileClick: () -> Unit,
   onNotificationsClick: () -> Unit,
+  onToggleTheme: () -> Unit,
   onRefreshClick: () -> Unit,
   onOpenLocaleClick: () -> Unit,
+  onOpenFaqClick: () -> Unit,
+  onOpenPrivacyPolicyClick: () -> Unit,
   onSettingsClick: () -> Unit,
   onShareAppClick: () -> Unit,
   onOpenCommunityClick: (String) -> Unit,
   onSignOutClick: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
+  val customLogoBitmap = rememberShayariImageBitmap(appLogoUrl)
   val drawerItemColors =
     NavigationDrawerItemDefaults.colors(
-      selectedContainerColor = BadgePurple.copy(alpha = 0.55f),
+      selectedContainerColor = palette.accentPurple.copy(alpha = 0.22f),
       unselectedContainerColor = Color.Transparent,
-      selectedIconColor = CrownGold,
-      unselectedIconColor = Color(0xFFD2C4EB),
-      selectedTextColor = Color.White,
-      unselectedTextColor = Color(0xFFF3EBFF),
+      selectedIconColor = palette.accentGold,
+      unselectedIconColor = palette.textSecondary,
+      selectedTextColor = palette.textPrimary,
+      unselectedTextColor = palette.textPrimary,
     )
 
   ModalDrawerSheet(
-    drawerContainerColor = DeepRoyalPurple,
-    drawerContentColor = Color.White,
+    drawerContainerColor = palette.bgTop,
+    drawerContentColor = palette.textPrimary,
     windowInsets = WindowInsets(0, 0, 0, 0),
     modifier = Modifier.widthIn(min = 290.dp, max = 340.dp).fillMaxWidth(0.82f),
   ) {
-    Box(
+  Box(
+    modifier =
+      Modifier.fillMaxSize()
+        .background(
+          Brush.verticalGradient(
+            colors = listOf(palette.bgTop, palette.bgMid, palette.bgBottom)
+          )
+        )
+  ) {
+    Canvas(modifier = Modifier.fillMaxSize()) {
+      drawCircle(
+        brush =
+          Brush.radialGradient(
+            colors = listOf(NeonPink.copy(alpha = 0.12f), Color.Transparent),
+            center = Offset(size.width * 0.9f, size.height * 0.12f),
+            radius = size.minDimension * 0.7f,
+          ),
+        center = Offset(size.width * 0.9f, size.height * 0.12f),
+        radius = size.minDimension * 0.7f,
+      )
+    }
+
+    Column(
       modifier =
         Modifier.fillMaxSize()
-          .background(
-            Brush.verticalGradient(
-              colors = listOf(HeaderPurpleStart, DeepRoyalPurple, Color(0xFF100520))
-            )
-          )
+          .navigationBarsPadding(),
     ) {
-      Canvas(modifier = Modifier.fillMaxSize()) {
-        drawCircle(
-          brush =
-            Brush.radialGradient(
-              colors = listOf(NeonPink.copy(alpha = 0.16f), Color.Transparent),
-              center = Offset(size.width * 0.9f, size.height * 0.12f),
-              radius = size.minDimension * 0.7f,
-            ),
-          center = Offset(size.width * 0.9f, size.height * 0.12f),
-          radius = size.minDimension * 0.7f,
-        )
-      }
-
+      // Brand & Live Profile Drawer Header
       Column(
         modifier =
-          Modifier.fillMaxSize()
+          Modifier.fillMaxWidth()
+            .background(
+              Brush.verticalGradient(
+                colors = listOf(palette.drawerHeaderStart, palette.drawerHeaderEnd)
+              )
+            )
             .statusBarsPadding()
-            .navigationBarsPadding(),
+            .clickable(onClick = onOpenProfileClick)
+            .padding(horizontal = 20.dp, vertical = 18.dp)
       ) {
-        // Brand & Live Profile Drawer Header
-        Column(
-          modifier =
-            Modifier.fillMaxWidth()
-              .clickable { onSelectTab(MainTab.PROFILE) }
-              .padding(horizontal = 20.dp, vertical = 18.dp)
-        ) {
           Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
           ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-              Image(
-                painter = painterResource(id = R.drawable.ic_crown),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-              )
+              if (customLogoBitmap != null) {
+                Image(
+                  bitmap = customLogoBitmap,
+                  contentDescription = appName,
+                  contentScale = ContentScale.Crop,
+                  modifier = Modifier.size(26.dp).clip(CircleShape),
+                )
+              } else {
+                Image(
+                  painter = painterResource(id = R.drawable.ic_crown),
+                  contentDescription = null,
+                  modifier = Modifier.size(24.dp),
+                )
+              }
               Spacer(modifier = Modifier.width(8.dp))
               Text(
                 text = appName,
@@ -1183,7 +1255,7 @@ private fun ShayariSideDrawerSheet(
               Icon(
                 painter = painterResource(id = R.drawable.ic_close),
                 contentDescription = stringResource(R.string.cd_back),
-                tint = Color.White.copy(alpha = 0.85f),
+                tint = Color.White.copy(alpha = 0.9f),
                 modifier = Modifier.size(20.dp),
               )
             }
@@ -1221,7 +1293,7 @@ private fun ShayariSideDrawerSheet(
                 Text(
                   text = userEmail,
                   style = MaterialTheme.typography.bodySmall,
-                  color = Color(0xFFD2C4EB),
+                  color = Color(0xFFE7DAF8),
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                 )
@@ -1230,7 +1302,7 @@ private fun ShayariSideDrawerSheet(
           }
         }
 
-        HorizontalDivider(color = NeonVioletGlow.copy(alpha = 0.25f))
+        HorizontalDivider(color = palette.outline.copy(alpha = 0.4f))
 
         Column(
           modifier =
@@ -1239,66 +1311,6 @@ private fun ShayariSideDrawerSheet(
               .padding(horizontal = 12.dp, vertical = 10.dp),
           verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-          NavigationDrawerItem(
-            selected = activeTab == MainTab.EXPLORE,
-            onClick = { onSelectTab(MainTab.EXPLORE) },
-            icon = {
-              Icon(
-                painter = painterResource(id = R.drawable.ic_home),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-              )
-            },
-            label = { Text(strings.tabHome, fontWeight = FontWeight.SemiBold) },
-            colors = drawerItemColors,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_home"),
-          )
-          NavigationDrawerItem(
-            selected = activeTab == MainTab.COMMUNITY,
-            onClick = { onSelectTab(MainTab.COMMUNITY) },
-            icon = {
-              Icon(
-                painter = painterResource(id = R.drawable.ic_community),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-              )
-            },
-            label = { Text(strings.tabFriends, fontWeight = FontWeight.SemiBold) },
-            colors = drawerItemColors,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_friends"),
-          )
-          NavigationDrawerItem(
-            selected = activeTab == MainTab.FAVORITES,
-            onClick = { onSelectTab(MainTab.FAVORITES) },
-            icon = {
-              Icon(
-                painter = painterResource(id = R.drawable.ic_heart_filled),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-              )
-            },
-            label = { Text(strings.tabFavorites, fontWeight = FontWeight.SemiBold) },
-            colors = drawerItemColors,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_favorites"),
-          )
-          NavigationDrawerItem(
-            selected = activeTab == MainTab.PROFILE,
-            onClick = { onSelectTab(MainTab.PROFILE) },
-            icon = {
-              Icon(
-                painter = painterResource(id = R.drawable.ic_person),
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-              )
-            },
-            label = { Text(strings.tabProfile, fontWeight = FontWeight.SemiBold) },
-            colors = drawerItemColors,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_profile"),
-          )
           NavigationDrawerItem(
             selected = false,
             onClick = onNotificationsClick,
@@ -1328,8 +1340,45 @@ private fun ShayariSideDrawerSheet(
             modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_alerts"),
           )
 
+          NavigationDrawerItem(
+            selected = false,
+            onClick = onToggleTheme,
+            icon = {
+              Icon(
+                painter =
+                  painterResource(
+                    id = if (isDarkTheme) R.drawable.ic_dark_mode else R.drawable.ic_light_mode
+                  ),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = {
+              Text(
+                text = if (isDarkTheme) strings.darkModeLabel else strings.lightModeLabel,
+                fontWeight = FontWeight.Medium,
+              )
+            },
+            badge = {
+              Switch(
+                checked = isDarkTheme,
+                onCheckedChange = { onToggleTheme() },
+                colors =
+                  SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = palette.accentPurple,
+                    uncheckedThumbColor = palette.accentGold,
+                    uncheckedTrackColor = palette.surfaceVariant,
+                  ),
+              )
+            },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_theme_toggle"),
+          )
+
           HorizontalDivider(
-            color = NeonVioletGlow.copy(alpha = 0.22f),
+            color = palette.outline.copy(alpha = 0.35f),
             modifier = Modifier.padding(vertical = 8.dp, horizontal = 8.dp),
           )
 
@@ -1368,13 +1417,43 @@ private fun ShayariSideDrawerSheet(
               Text(
                 text = "${selectedLanguageCode.uppercase()} • ${selectedCountryCode.uppercase()}",
                 style = MaterialTheme.typography.labelSmall,
-                color = CrownGold,
+                color = palette.accentGold,
                 fontWeight = FontWeight.Bold,
               )
             },
             colors = drawerItemColors,
             shape = RoundedCornerShape(14.dp),
             modifier = Modifier.minimumInteractiveComponentSize().testTag("menu_locale_item"),
+          )
+          NavigationDrawerItem(
+            selected = false,
+            onClick = onOpenFaqClick,
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_faq),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.faqTitle, fontWeight = FontWeight.Medium) },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_faq"),
+          )
+          NavigationDrawerItem(
+            selected = false,
+            onClick = onOpenPrivacyPolicyClick,
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_shield),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.privacyPolicyTitle, fontWeight = FontWeight.Medium) },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_privacy_policy_item"),
           )
           NavigationDrawerItem(
             selected = false,
@@ -1425,7 +1504,7 @@ private fun ShayariSideDrawerSheet(
           }
         }
 
-        HorizontalDivider(color = NeonVioletGlow.copy(alpha = 0.25f))
+        HorizontalDivider(color = palette.outline.copy(alpha = 0.4f))
 
         Row(
           modifier =
@@ -1453,9 +1532,9 @@ private fun ShayariSideDrawerSheet(
             )
           }
           Text(
-            text = "v1.0",
+            text = "v${BuildConfig.VERSION_NAME}",
             style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFFD2C4EB).copy(alpha = 0.75f),
+            color = palette.textMuted,
           )
         }
       }

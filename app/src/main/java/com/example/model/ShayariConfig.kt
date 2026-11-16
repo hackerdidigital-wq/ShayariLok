@@ -350,20 +350,100 @@ data class ShayariNotification(
   }
 }
 
+data class ShayariFaq(
+  val id: String,
+  val question: String,
+  val answer: String,
+  val category: String = "General",
+) {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
+      put("id", id)
+      put("question", question)
+      put("answer", answer)
+      if (category.isNotBlank()) put("category", category)
+    }
+
+  companion object {
+    fun fromJson(json: JSONObject?, fallbackIndex: Int = 1): ShayariFaq? {
+      if (json == null) return null
+      val question =
+        json.optCleanString("question")
+          .ifEmpty { json.optCleanString("q") }
+          .ifEmpty { json.optCleanString("title") }
+      val answer =
+        json.optCleanString("answer")
+          .ifEmpty { json.optCleanString("a") }
+          .ifEmpty { json.optCleanString("body") }
+          .ifEmpty { json.optCleanString("description") }
+      if (question.isBlank() || answer.isBlank()) return null
+      val id = json.optCleanString("id").ifEmpty { "faq_$fallbackIndex" }
+      val category = json.optCleanString("category").ifEmpty { "General" }
+      return ShayariFaq(
+        id = id,
+        question = question,
+        answer = answer,
+        category = category,
+      )
+    }
+  }
+}
+
+data class ShayariPolicySection(
+  val number: String,
+  val title: String,
+  val body: String,
+) {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
+      put("number", number)
+      put("title", title)
+      put("body", body)
+    }
+
+  companion object {
+    fun fromJson(json: JSONObject?, fallbackIndex: Int = 1): ShayariPolicySection? {
+      if (json == null) return null
+      val title = json.optCleanString("title").ifEmpty { json.optCleanString("heading") }
+      val body =
+        json.optCleanString("body")
+          .ifEmpty { json.optCleanString("content") }
+          .ifEmpty { json.optCleanString("description") }
+          .ifEmpty { json.optCleanString("text") }
+      if (title.isBlank() && body.isBlank()) return null
+      val number =
+        json.optCleanString("number")
+          .ifEmpty { fallbackIndex.toString().padStart(2, '0') }
+      return ShayariPolicySection(
+        number = number,
+        title = title.ifBlank { "Policy $number" },
+        body = body,
+      )
+    }
+  }
+}
+
 data class ShayariConfig(
   val appName: String,
   val latestVersionCode: Int,
   val forceUpdateUrl: String,
   val maintenanceMode: Boolean,
   val maintenanceMessage: String = DEFAULT_MAINTENANCE_MESSAGE,
+  val appLogoUrl: String = "",
   val privacyPolicyUrl: String = "",
+  val privacyPolicyTitle: String = "",
+  val privacyPolicyText: String = "",
+  val privacyPolicySections: List<ShayariPolicySection> = emptyList(),
   val socialLink: String = "",
   val adsEnabled: Boolean = false,
+  val admobAppId: String = "",
   val bannerAdId: String = "",
   val interstitialAdId: String = "",
+  val nativeAdId: String = "",
   val announcementTitle: String = "",
   val announcementMessage: String = "",
   val notifications: List<ShayariNotification> = emptyList(),
+  val faqs: List<ShayariFaq> = emptyList(),
   val categories: List<String> = DEFAULT_CATEGORIES,
   val shayariList: List<ShayariItem> = emptyList(),
   val supportedLanguages: List<SupportedLanguage> = DEFAULT_LANGUAGES,
@@ -378,17 +458,33 @@ data class ShayariConfig(
     root.put("force_update_url", forceUpdateUrl)
     root.put("maintenance_mode", maintenanceMode)
     if (maintenanceMessage.isNotBlank()) root.put("maintenance_message", maintenanceMessage)
+    if (appLogoUrl.isNotBlank()) root.put("app_logo_url", appLogoUrl)
     root.put("privacy_policy_url", privacyPolicyUrl)
+    if (privacyPolicyTitle.isNotBlank()) root.put("privacy_policy_title", privacyPolicyTitle)
+    if (privacyPolicyText.isNotBlank()) root.put("privacy_policy_text", privacyPolicyText)
+    if (privacyPolicySections.isNotEmpty()) {
+      val policyArr = JSONArray()
+      privacyPolicySections.forEach { policyArr.put(it.toJson()) }
+      root.put("privacy_policy_sections", policyArr)
+    }
     root.put("social_link", socialLink)
     root.put("ads_enabled", adsEnabled)
+    if (admobAppId.isNotBlank()) root.put("admob_app_id", admobAppId)
     root.put("banner_ad_id", bannerAdId)
     root.put("interstitial_ad_id", interstitialAdId)
+    if (nativeAdId.isNotBlank()) root.put("native_ad_id", nativeAdId)
     if (announcementTitle.isNotBlank()) root.put("announcement_title", announcementTitle)
     if (announcementMessage.isNotBlank()) root.put("announcement_message", announcementMessage)
 
     val notificationArray = JSONArray()
     notifications.forEach { notificationArray.put(it.toJson()) }
     root.put("notifications", notificationArray)
+
+    if (faqs.isNotEmpty()) {
+      val faqArray = JSONArray()
+      faqs.forEach { faqArray.put(it.toJson()) }
+      root.put("faqs", faqArray)
+    }
 
     val categoryArray = JSONArray()
     categories.forEach { categoryArray.put(it) }
@@ -489,7 +585,7 @@ data class ShayariConfig(
       val nestedConfigJson = data["configJson"] as? String ?: data["config_json"] as? String
       if (!nestedConfigJson.isNullOrBlank()) {
         try {
-          return fromJson(nestedConfigJson)
+          return fromJson(nestedConfigJson, fallback = fallback)
         } catch (_: Exception) {
           // Fall through to structured map conversion
         }
@@ -537,26 +633,85 @@ data class ShayariConfig(
         root.optCleanString("maintenance_message")
           .ifEmpty { root.optCleanString("maintenanceMessage") }
           .ifEmpty { fallback?.maintenanceMessage ?: DEFAULT_MAINTENANCE_MESSAGE }
+      val appLogoUrl =
+        root.optCleanString("app_logo_url")
+          .ifEmpty { root.optCleanString("appLogoUrl") }
+          .ifEmpty { root.optCleanString("logo_url") }
+          .ifEmpty { root.optCleanString("logoUrl") }
+          .ifEmpty { root.optCleanString("site_logo") }
+          .ifEmpty { root.optCleanString("logo") }
+          .ifEmpty { fallback?.appLogoUrl ?: "" }
       val privacyPolicyUrl =
         root.optCleanString("privacy_policy_url")
           .ifEmpty { root.optCleanString("privacyPolicyUrl") }
           .ifEmpty { fallback?.privacyPolicyUrl ?: "" }
+      val privacyPolicyTitle =
+        root.optCleanString("privacy_policy_title")
+          .ifEmpty { root.optCleanString("privacyPolicyTitle") }
+          .ifEmpty { fallback?.privacyPolicyTitle ?: "" }
+      val privacyPolicyText =
+        root.optCleanString("privacy_policy_text")
+          .ifEmpty { root.optCleanString("privacyPolicyText") }
+          .ifEmpty { root.optCleanString("privacy_policy_content") }
+          .ifEmpty { root.optCleanString("privacyPolicyContent") }
+          .ifEmpty { root.optCleanString("privacy_policy") }
+          .ifEmpty { root.optCleanString("privacyPolicy") }
+          .ifEmpty { fallback?.privacyPolicyText ?: "" }
+      val privacySectionsJson =
+        root.optJSONArray("privacy_policy_sections")
+          ?: root.optJSONArray("privacyPolicySections")
+          ?: root.optJSONArray("privacy_sections")
+          ?: root.optJSONArray("privacySections")
+      val parsedPolicySections =
+        if (privacySectionsJson != null) {
+          buildList {
+            for (i in 0 until privacySectionsJson.length()) {
+              ShayariPolicySection.fromJson(privacySectionsJson.optJSONObject(i), fallbackIndex = i + 1)
+                ?.let { add(it) }
+            }
+          }
+        } else {
+          fallback?.privacyPolicySections ?: emptyList()
+        }
       val socialLink =
         root.optCleanString("social_link")
           .ifEmpty { root.optCleanString("socialLink") }
           .ifEmpty { fallback?.socialLink ?: "" }
+
+      val admobObj = root.optJSONObject("admob") ?: root.optJSONObject("ads")
       val adsEnabled =
-        if (root.has("ads_enabled")) root.optFlexibleBoolean("ads_enabled", false)
-        else if (root.has("adsEnabled")) root.optFlexibleBoolean("adsEnabled", false)
-        else fallback?.adsEnabled ?: false
+        when {
+          root.has("ads_enabled") -> root.optFlexibleBoolean("ads_enabled", false)
+          root.has("adsEnabled") -> root.optFlexibleBoolean("adsEnabled", false)
+          admobObj?.has("enabled") == true -> admobObj.optFlexibleBoolean("enabled", false)
+          admobObj?.has("ads_enabled") == true -> admobObj.optFlexibleBoolean("ads_enabled", false)
+          admobObj?.has("adsEnabled") == true -> admobObj.optFlexibleBoolean("adsEnabled", false)
+          else -> fallback?.adsEnabled ?: false
+        }
+      val admobAppId =
+        root.optCleanString("admob_app_id")
+          .ifEmpty { root.optCleanString("admobAppId") }
+          .ifEmpty { admobObj?.optCleanString("app_id").orEmpty() }
+          .ifEmpty { admobObj?.optCleanString("appId").orEmpty() }
+          .ifEmpty { fallback?.admobAppId ?: "" }
       val bannerAdId =
         root.optCleanString("banner_ad_id")
           .ifEmpty { root.optCleanString("bannerAdId") }
+          .ifEmpty { admobObj?.optCleanString("banner_ad_id").orEmpty() }
+          .ifEmpty { admobObj?.optCleanString("bannerId").orEmpty() }
           .ifEmpty { fallback?.bannerAdId ?: "" }
       val interstitialAdId =
         root.optCleanString("interstitial_ad_id")
           .ifEmpty { root.optCleanString("interstitialAdId") }
+          .ifEmpty { admobObj?.optCleanString("interstitial_ad_id").orEmpty() }
+          .ifEmpty { admobObj?.optCleanString("interstitialId").orEmpty() }
           .ifEmpty { fallback?.interstitialAdId ?: "" }
+      val nativeAdId =
+        root.optCleanString("native_ad_id")
+          .ifEmpty { root.optCleanString("nativeAdId") }
+          .ifEmpty { admobObj?.optCleanString("native_ad_id").orEmpty() }
+          .ifEmpty { admobObj?.optCleanString("nativeId").orEmpty() }
+          .ifEmpty { fallback?.nativeAdId ?: "" }
       val announcementTitle =
         root.optCleanString("announcement_title")
           .ifEmpty { root.optCleanString("announcementTitle") }
@@ -596,6 +751,22 @@ data class ShayariConfig(
           )
         )
       }
+
+      val faqsJson =
+        root.optJSONArray("faqs")
+          ?: root.optJSONArray("faq_list")
+          ?: root.optJSONArray("faqList")
+          ?: root.optJSONArray("faq")
+      val parsedFaqs =
+        if (faqsJson != null) {
+          buildList {
+            for (i in 0 until faqsJson.length()) {
+              ShayariFaq.fromJson(faqsJson.optJSONObject(i), fallbackIndex = i + 1)?.let { add(it) }
+            }
+          }
+        } else {
+          fallback?.faqs ?: emptyList()
+        }
 
       val categories = mutableListOf<String>()
       val categoriesJson = root.optJSONArray("categories")
@@ -663,8 +834,13 @@ data class ShayariConfig(
           fallback?.supportedCountries ?: DEFAULT_COUNTRIES
         }
 
-      val themeObj = root.optJSONObject("dynamic_theme") ?: root.optJSONObject("dynamicTheme")
-      val parsedTheme = if (themeObj != null) DynamicThemeConfig.fromJson(themeObj) else (fallback?.dynamicTheme ?: DynamicThemeConfig())
+      val themeObj =
+        root.optJSONObject("dynamic_theme")
+          ?: root.optJSONObject("dynamicTheme")
+          ?: root.optJSONObject("theme")
+      val parsedTheme =
+        if (themeObj != null) DynamicThemeConfig.fromJson(themeObj)
+        else (fallback?.dynamicTheme ?: DynamicThemeConfig())
 
       val engagementObj = root.optJSONObject("engagement")
       val dailyStreakEnabled =
@@ -707,14 +883,21 @@ data class ShayariConfig(
         forceUpdateUrl = forceUpdateUrl,
         maintenanceMode = maintenanceMode,
         maintenanceMessage = maintenanceMessage,
+        appLogoUrl = appLogoUrl,
         privacyPolicyUrl = privacyPolicyUrl,
+        privacyPolicyTitle = privacyPolicyTitle,
+        privacyPolicyText = privacyPolicyText,
+        privacyPolicySections = parsedPolicySections,
         socialLink = socialLink,
         adsEnabled = adsEnabled,
+        admobAppId = admobAppId,
         bannerAdId = bannerAdId,
         interstitialAdId = interstitialAdId,
+        nativeAdId = nativeAdId,
         announcementTitle = announcementTitle,
         announcementMessage = announcementMessage,
         notifications = notifications,
+        faqs = parsedFaqs,
         categories = categories,
         shayariList = shayariItems,
         supportedLanguages = parsedLangs,

@@ -64,8 +64,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.AdMobManager
 import com.example.data.GoogleAuthHelper
 import com.example.data.GoogleAuthHelper.authStateFlow
+import com.example.data.ShayariRepository
 import com.example.data.SocialRepository
 import com.example.model.ShayariItem
 import com.example.ui.MainTab
@@ -74,6 +76,7 @@ import com.example.ui.ShayariViewModel
 import com.example.ui.SocialViewModel
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.i18n.appStringsFor
+import com.example.ui.screens.FaqSheet
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.MaintenanceScreen
 import com.example.ui.screens.MyProfileScreen
@@ -94,8 +97,10 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    val repository = ShayariRepository(this)
     setContent {
-      ShayariLokTheme {
+      val initialDark = remember { repository.getUserDarkModeOverride() ?: true }
+      ShayariLokTheme(darkTheme = initialDark) {
         ShayariLokRootGate()
       }
     }
@@ -148,7 +153,10 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
   val copiedMessage = appStrings.copiedSnackbar
   val handleCopiedMessage = appStrings.handleCopiedSnackbar
 
-  val derivedHandle = remember(firebaseUser.uid) { SocialRepository.buildHandleFromUid(firebaseUser.uid) }
+  val derivedHandle =
+    remember(firebaseUser.email, firebaseUser.uid) {
+      SocialRepository.buildHandleFromEmail(firebaseUser.email.orEmpty(), firebaseUser.uid)
+    }
   val googleName =
     firebaseUser.displayName?.trim()?.takeIf { it.isNotEmpty() }
       ?: firebaseUser.email?.substringBefore("@")?.takeIf { it.isNotEmpty() }
@@ -172,6 +180,20 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
     )
   val socialState by socialViewModel.uiState.collectAsStateWithLifecycle()
   var showAlertsSheet by remember { mutableStateOf(false) }
+  var showFaqSheet by remember { mutableStateOf(false) }
+
+  val readyConfig = (uiState.screenState as? ShayariScreenState.Ready)?.config
+  val splashLogoUrl =
+    remember(readyConfig?.appLogoUrl) {
+      readyConfig?.appLogoUrl?.takeIf { it.isNotBlank() }
+        ?: ShayariRepository(appContext).loadEffectiveCachedConfig().appLogoUrl
+    }
+
+  LaunchedEffect(readyConfig?.adsEnabled, readyConfig?.interstitialAdId) {
+    val cfg = readyConfig ?: return@LaunchedEffect
+    AdMobManager.initialize(appContext, cfg.adsEnabled)
+    AdMobManager.preloadInterstitial(appContext, cfg.adsEnabled, cfg.interstitialAdId)
+  }
 
   val copyHandleToClipboard: (String) -> Unit = { handle ->
     copyPlainText(context, "Shayari Lok ID", handle)
@@ -210,7 +232,10 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
 
   val totalUnreadAlerts = uiState.unreadNotificationCount + socialState.unreadNotificationsCount
 
-  ShayariLokTheme(dynamicTheme = activeDynamicTheme) {
+  ShayariLokTheme(
+    darkTheme = uiState.isDarkTheme,
+    dynamicTheme = activeDynamicTheme,
+  ) {
     CompositionLocalProvider(
       LocalLayoutDirection provides layoutDir,
       LocalAppStrings provides appStrings,
@@ -234,7 +259,10 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
   ) { targetStage ->
     when (targetStage) {
       "SPLASH" -> {
-        ShayariSplashScreen(appName = uiState.splashAppName)
+        ShayariSplashScreen(
+          appName = uiState.splashAppName,
+          appLogoUrl = splashLogoUrl,
+        )
       }
 
       "MAINTENANCE" -> {
@@ -285,6 +313,8 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
               votedPollOptions = uiState.votedPollOptions,
               myProfile = socialState.myProfile,
               userEmail = socialState.userEmail,
+              isDarkTheme = uiState.isDarkTheme,
+              onToggleTheme = viewModel::toggleDarkTheme,
               onSignOutClick = {
                 GoogleAuthHelper.signOut(
                   credentialManager = credentialManager,
@@ -292,13 +322,26 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
                 )
               },
               onSelectCategory = viewModel::selectCategory,
-              onSelectTab = viewModel::selectTab,
+              onSelectTab = { tab ->
+                viewModel.selectTab(tab)
+                if (tab == MainTab.COMMUNITY || tab == MainTab.FAVORITES) {
+                  AdMobManager.maybeShowInterstitial(
+                    activity = context as? android.app.Activity,
+                    adsEnabled = ready.config.adsEnabled,
+                    interstitialAdId = ready.config.interstitialAdId,
+                  )
+                }
+              },
               onToggleSearch = viewModel::toggleSearchVisibility,
               onSearchQueryChange = viewModel::updateSearchQuery,
               onRefreshClick = { viewModel.refreshConfig(isSilentSync = false) },
               onNotificationsClick = {
                 viewModel.markAdminNotificationsRead()
                 showAlertsSheet = true
+              },
+              onOpenFaqClick = { showFaqSheet = true },
+              onOpenPrivacyPolicyClick = {
+                context.startActivity(Intent(context, PrivacyPolicyActivity::class.java))
               },
               onSettingsClick = {
                 context.startActivity(Intent(context, SettingsActivity::class.java))
@@ -391,6 +434,13 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
               },
               onMarkSocialRead = socialViewModel::markAllNotificationsRead,
               onDismiss = { showAlertsSheet = false },
+            )
+          }
+
+          if (showFaqSheet) {
+            FaqSheet(
+              faqs = ready.config.faqs,
+              onDismiss = { showFaqSheet = false },
             )
           }
 

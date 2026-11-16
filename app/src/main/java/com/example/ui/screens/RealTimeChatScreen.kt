@@ -61,17 +61,10 @@ import com.example.model.ChatMessage
 import com.example.model.PublicProfile
 import com.example.ui.components.UserAvatar
 import com.example.ui.i18n.LocalAppStrings
-import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.CrownGold
-import com.example.ui.theme.DarkSurface
-import com.example.ui.theme.DarkSurfaceVariant
-import com.example.ui.theme.DeepRoyalPurple
-import com.example.ui.theme.HeaderPurpleEnd
-import com.example.ui.theme.HeaderPurpleStart
-import com.example.ui.theme.MidnightIndigo
+import com.example.ui.theme.LocalShayariColors
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
-import com.example.ui.theme.NeonVioletGlow
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -96,6 +89,7 @@ fun RealTimeChatScreen(
   BackHandler { onBack() }
 
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   var draft by remember { mutableStateOf("") }
   val listState = rememberLazyListState()
 
@@ -113,7 +107,7 @@ fun RealTimeChatScreen(
       Modifier.fillMaxSize()
         .background(
           Brush.verticalGradient(
-            colors = listOf(DeepRoyalPurple, MidnightIndigo, Color(0xFF120624))
+            colors = listOf(palette.bgTop, palette.bgMid, palette.bgBottom)
           )
         ),
     topBar = {
@@ -123,7 +117,7 @@ fun RealTimeChatScreen(
         modifier =
           Modifier.fillMaxWidth()
             .background(
-              Brush.verticalGradient(colors = listOf(HeaderPurpleStart, HeaderPurpleEnd))
+              Brush.verticalGradient(colors = listOf(palette.headerStart, palette.headerEnd))
             ),
       ) {
         Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
@@ -175,7 +169,8 @@ fun RealTimeChatScreen(
               shape = RoundedCornerShape(12.dp),
               colors =
                 ButtonDefaults.buttonColors(
-                  containerColor = if (isFollowingPartner) DarkSurfaceVariant else NeonPink
+                  containerColor =
+                    if (isFollowingPartner) Color.White.copy(alpha = 0.22f) else palette.accentPink
                 ),
               contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
               modifier = Modifier.minimumInteractiveComponentSize().testTag("chat_follow_button"),
@@ -220,8 +215,8 @@ fun RealTimeChatScreen(
     },
     bottomBar = {
       Surface(
-        color = DarkSurface.copy(alpha = 0.96f),
-        border = BorderStroke(0.8.dp, NeonVioletGlow.copy(alpha = 0.35f)),
+        color = palette.surface.copy(alpha = 0.96f),
+        border = BorderStroke(0.8.dp, palette.outline),
         modifier = Modifier.fillMaxWidth().imePadding().navigationBarsPadding(),
       ) {
         Column {
@@ -247,7 +242,7 @@ fun RealTimeChatScreen(
             items(QUICK_SHAYARI_EMOJIS) { emoji ->
               Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = DarkSurfaceVariant,
+                color = palette.surfaceVariant,
                 modifier =
                   Modifier.clip(RoundedCornerShape(12.dp))
                     .clickable(enabled = !isBlocked) { draft += emoji }
@@ -275,18 +270,18 @@ fun RealTimeChatScreen(
               placeholder = {
                 Text(
                   text = if (isBlocked) strings.messagingDisabled else strings.writeMessageHint,
-                  color = Color.White.copy(alpha = 0.6f),
+                  color = palette.textMuted,
                 )
               },
               shape = RoundedCornerShape(20.dp),
               colors =
                 OutlinedTextFieldDefaults.colors(
-                  focusedBorderColor = CrownGold,
-                  unfocusedBorderColor = NeonVioletGlow.copy(alpha = 0.45f),
-                  focusedTextColor = Color.White,
-                  unfocusedTextColor = Color.White,
-                  focusedContainerColor = DarkSurfaceVariant,
-                  unfocusedContainerColor = DarkSurfaceVariant,
+                  focusedBorderColor = palette.accentPurple,
+                  unfocusedBorderColor = palette.outline,
+                  focusedTextColor = palette.textPrimary,
+                  unfocusedTextColor = palette.textPrimary,
+                  focusedContainerColor = palette.surfaceVariant,
+                  unfocusedContainerColor = palette.surfaceVariant,
                 ),
               modifier = Modifier.weight(1f).testTag("chat_message_input"),
             )
@@ -305,7 +300,7 @@ fun RealTimeChatScreen(
                     if (!isBlocked && !isSendingMessage && draft.isNotBlank()) {
                       Brush.linearGradient(colors = listOf(NeonPurple, NeonPink))
                     } else {
-                      Brush.linearGradient(colors = listOf(DarkSurfaceVariant, DarkSurfaceVariant))
+                      Brush.linearGradient(colors = listOf(palette.surfaceVariant, palette.surfaceVariant))
                     },
                     CircleShape,
                   )
@@ -314,7 +309,7 @@ fun RealTimeChatScreen(
             ) {
               if (isSendingMessage) {
                 CircularProgressIndicator(
-                  color = CrownGold,
+                  color = palette.accentGold,
                   strokeWidth = 2.dp,
                   modifier = Modifier.size(18.dp),
                 )
@@ -322,7 +317,7 @@ fun RealTimeChatScreen(
                 Icon(
                   painter = painterResource(id = R.drawable.ic_send),
                   contentDescription = strings.chatAction,
-                  tint = Color.White,
+                  tint = if (!isBlocked && draft.isNotBlank()) Color.White else palette.textMuted,
                   modifier = Modifier.size(20.dp),
                 )
               }
@@ -345,7 +340,7 @@ fun RealTimeChatScreen(
           Icon(
             painter = painterResource(id = R.drawable.ic_chat),
             contentDescription = null,
-            tint = CrownGold,
+            tint = palette.accentGold,
             modifier = Modifier.size(40.dp),
           )
           Spacer(modifier = Modifier.height(10.dp))
@@ -353,13 +348,13 @@ fun RealTimeChatScreen(
             text = "${strings.sayHelloPrefix} ${partner.displayName}!",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = palette.textPrimary,
           )
           Spacer(modifier = Modifier.height(4.dp))
           Text(
             text = strings.chatEmptySubtitle,
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFFD2C4EB),
+            color = palette.textSecondary,
           )
         }
       } else {
@@ -388,6 +383,7 @@ private fun ChatMessageBubble(
   isMine: Boolean,
   nowLabel: String,
 ) {
+  val palette = LocalShayariColors.current
   val timeText =
     remember(message.createdAtMillis, nowLabel) {
       if (message.createdAtMillis > 0L) {
@@ -396,6 +392,9 @@ private fun ChatMessageBubble(
         nowLabel
       }
     }
+
+  val textColor = if (isMine) Color.White else palette.textPrimary
+  val timeColor = if (isMine) Color.White.copy(alpha = 0.78f) else palette.textMuted
 
   Row(
     modifier = Modifier.fillMaxWidth(),
@@ -409,11 +408,11 @@ private fun ChatMessageBubble(
           bottomStart = if (isMine) 18.dp else 4.dp,
           bottomEnd = if (isMine) 4.dp else 18.dp,
         ),
-      color = if (isMine) BadgePurple else DarkSurface,
+      color = if (isMine) palette.accentPurple else palette.surface,
       border =
         BorderStroke(
           0.8.dp,
-          if (isMine) NeonPink.copy(alpha = 0.55f) else NeonVioletGlow.copy(alpha = 0.35f),
+          if (isMine) palette.accentPink.copy(alpha = 0.55f) else palette.outline,
         ),
       modifier = Modifier.widthIn(max = 300.dp),
     ) {
@@ -421,7 +420,7 @@ private fun ChatMessageBubble(
         Text(
           text = message.text,
           style = MaterialTheme.typography.bodyMedium,
-          color = Color.White,
+          color = textColor,
         )
         Spacer(modifier = Modifier.height(3.dp))
         Row(
@@ -431,7 +430,7 @@ private fun ChatMessageBubble(
           Text(
             text = timeText,
             style = MaterialTheme.typography.labelSmall,
-            color = Color.White.copy(alpha = 0.72f),
+            color = timeColor,
             fontSize = 10.sp,
           )
           if (isMine) {
@@ -440,7 +439,7 @@ private fun ChatMessageBubble(
               text = if (message.isRead) "✓✓" else "✓",
               fontSize = 10.sp,
               fontWeight = FontWeight.Bold,
-              color = if (message.isRead) CrownGold else Color.White.copy(alpha = 0.65f),
+              color = if (message.isRead) CrownGold else Color.White.copy(alpha = 0.72f),
             )
           }
         }

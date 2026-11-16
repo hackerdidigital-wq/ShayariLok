@@ -44,11 +44,24 @@ class SocialRepository(private val db: FirebaseFirestore) {
   fun observeMyProfile(selfUid: String): Flow<PublicProfile?> = flow {
     requireUserId()
     val publicDocRef = db.collection("appUsers").document(selfUid)
+    val altPublicDocRef = db.collection("appusers").document(selfUid)
     val privateDocRef = db.collection("users").document(selfUid)
     val publicFlow =
       publicDocRef.snapshots().map { snapshot ->
         if (!snapshot.exists()) null else snapshot.toPublicProfile()
       }
+    val altPublicFlow =
+      altPublicDocRef
+        .snapshots()
+        .map { snapshot -> if (!snapshot.exists()) null else snapshot.toPublicProfile() }
+        .catch { cause ->
+          val firestoreErr =
+            generateSequence(cause) { it.cause }
+              .filterIsInstance<FirebaseFirestoreException>()
+              .firstOrNull()
+          if (firestoreErr == null && cause is CancellationException) throw cause
+          emit(null)
+        }
     val privateFlow =
       privateDocRef
         .snapshots()
@@ -63,16 +76,18 @@ class SocialRepository(private val db: FirebaseFirestore) {
         }
     emitAll(
       kotlinx.coroutines.flow
-        .combine(publicFlow, privateFlow) { publicProf, privateProf ->
+        .combine(publicFlow, altPublicFlow, privateFlow) { publicProf, altProf, privateProf ->
+          val basePublic = publicProf ?: altProf
           when {
-            publicProf != null && privateProf != null ->
-              publicProf.copy(
-                displayName = publicProf.displayName.ifBlank { privateProf.displayName },
-                photoUrl = publicProf.photoUrl.ifBlank { privateProf.photoUrl },
-                handle = publicProf.handle.ifBlank { privateProf.handle },
-                address = publicProf.address.ifBlank { privateProf.address },
+            basePublic != null && privateProf != null ->
+              basePublic.copy(
+                displayName = basePublic.displayName.ifBlank { privateProf.displayName },
+                photoUrl = basePublic.photoUrl.ifBlank { privateProf.photoUrl },
+                handle = basePublic.handle.ifBlank { privateProf.handle },
+                city = basePublic.city.ifBlank { privateProf.city },
+                address = basePublic.address.ifBlank { privateProf.address },
               )
-            publicProf != null -> publicProf
+            basePublic != null -> basePublic
             else -> privateProf
           }
         }
@@ -160,11 +175,15 @@ class SocialRepository(private val db: FirebaseFirestore) {
         if (handleWithAt.isNotBlank()) {
           runCatching { col.whereEqualTo("handle", handleWithAt).limit(10).get().await() }
             .onSuccess { collectDocs(it.documents) }
+          runCatching { col.whereEqualTo("handle", handleWithAt.uppercase()).limit(10).get().await() }
+            .onSuccess { collectDocs(it.documents) }
           runCatching { col.whereEqualTo("handleLower", handleWithAt.lowercase()).limit(10).get().await() }
             .onSuccess { collectDocs(it.documents) }
           runCatching { col.whereEqualTo("username", stripped).limit(10).get().await() }
             .onSuccess { collectDocs(it.documents) }
           runCatching { col.whereEqualTo("username", stripped.uppercase()).limit(10).get().await() }
+            .onSuccess { collectDocs(it.documents) }
+          runCatching { col.whereEqualTo("usernameLower", stripped.lowercase()).limit(10).get().await() }
             .onSuccess { collectDocs(it.documents) }
         }
         runCatching {
@@ -188,22 +207,21 @@ class SocialRepository(private val db: FirebaseFirestore) {
         }.onSuccess { collectDocs(it.documents) }
       }
 
-      // Scan discoverable appUsers / appusers collections locally if prefix indexes haven't matched
-      if (resultsByUid.isEmpty()) {
-        for (collectionName in listOf("appUsers", "appusers")) {
-          runCatching {
-            db.collection(collectionName).limit(120).get().await()
-          }.onSuccess { snap ->
-            collectDocs(
-              snap.documents.filter { doc ->
-                val prof = doc.toPublicProfile() ?: return@filter false
-                prof.matchesQuery(q)
-              }
-            )
-          }.onFailure { err ->
-            if (err !is CancellationException && collectionName == "appUsers") {
-              handleFirestoreError(err, OperationType.LIST, collectionName)
+      // Also perform a broad case-insensitive substring scan on recent discoverable docs
+      // so partial @SL_ IDs, cities, or older user docs missing lowercase index fields always resolve.
+      for (collectionName in listOf("appUsers", "appusers")) {
+        runCatching {
+          db.collection(collectionName).limit(150).get().await()
+        }.onSuccess { snap ->
+          collectDocs(
+            snap.documents.filter { doc ->
+              val prof = doc.toPublicProfile() ?: return@filter false
+              prof.matchesQuery(q)
             }
+          )
+        }.onFailure { err ->
+          if (err !is CancellationException && collectionName == "appUsers" && resultsByUid.isEmpty()) {
+            handleFirestoreError(err, OperationType.LIST, collectionName)
           }
         }
       }
@@ -351,10 +369,10 @@ class SocialRepository(private val db: FirebaseFirestore) {
         return Result.failure(e)
       }
 
-    val safeHandle = defaultHandle.trim().ifBlank { "@SL_${uid.takeLast(4).uppercase()}" }.take(32)
-    val cleanUsername = safeHandle.removePrefix("@").ifBlank { "SL_${uid.takeLast(4).uppercase()}" }
-    val safeName = defaultDisplayName.trim().ifBlank { "Shayari Lover" }.take(60)
     val safeEmail = email.trim().take(160)
+    val initialCandidateHandle =
+      defaultHandle.trim().ifBlank { buildHandleFromEmail(safeEmail, uid) }.take(32)
+    val safeName = defaultDisplayName.trim().ifBlank { "Shayari Lover" }.take(60)
     val safePhoto = photoUrl.trim().take(MAX_AVATAR_URI_CHARS)
 
     val privateUserRef = db.collection("users").document(uid)
@@ -373,9 +391,28 @@ class SocialRepository(private val db: FirebaseFirestore) {
           else -> safePhoto
         }
 
-      val existingHandle = existingPublic.getString("handle").orEmpty().ifBlank { safeHandle }
-      val existingUsername =
-        existingPublic.getString("username").orEmpty().ifBlank { existingHandle.removePrefix("@") }
+      var resolvedHandle = existingPublic.getString("handle").orEmpty().ifBlank { initialCandidateHandle }
+      if (!existingPublic.exists() || existingPublic.getString("handle").isNullOrBlank()) {
+        val collisionSnap =
+          runCatching {
+            db.collection("appUsers")
+              .whereEqualTo("handleLower", resolvedHandle.lowercase())
+              .limit(3)
+              .get()
+              .await()
+          }.getOrNull()
+        val conflictExists =
+          collisionSnap?.documents?.any { doc ->
+            val ownerUid = doc.getString("uid").orEmpty().ifBlank { doc.id }
+            ownerUid != uid
+          } == true
+        if (conflictExists) {
+          resolvedHandle = buildCollisionSafeHandle(safeEmail, uid)
+        }
+      }
+
+      val cleanUsername =
+        existingPublic.getString("username").orEmpty().ifBlank { resolvedHandle.removePrefix("@") }
       val existingName = existingPublic.getString("displayName").orEmpty().ifBlank { safeName }
 
       val privatePayload =
@@ -384,8 +421,8 @@ class SocialRepository(private val db: FirebaseFirestore) {
           put("displayName", existingName)
           put("email", safeEmail)
           if (preservedCustomPhoto.isNotEmpty()) put("photoUrl", preservedCustomPhoto)
-          put("handle", existingHandle)
-          put("username", existingUsername)
+          put("handle", resolvedHandle)
+          put("username", cleanUsername)
           if (!existingPrivate.exists()) {
             put("createdAt", FieldValue.serverTimestamp())
           }
@@ -401,8 +438,9 @@ class SocialRepository(private val db: FirebaseFirestore) {
             put("displayName", safeName)
             put("displayNameLower", safeName.lowercase())
             put("username", cleanUsername)
-            put("handle", safeHandle)
-            put("handleLower", safeHandle.lowercase())
+            put("usernameLower", cleanUsername.lowercase())
+            put("handle", resolvedHandle)
+            put("handleLower", resolvedHandle.lowercase())
             if (preservedCustomPhoto.isNotEmpty()) put("photoUrl", preservedCustomPhoto)
             put("city", "")
             put("bio", "Shayari Lok Member")
@@ -425,10 +463,16 @@ class SocialRepository(private val db: FirebaseFirestore) {
             } else {
               put("displayNameLower", existingName.lowercase())
             }
-            put("handleLower", existingHandle.lowercase())
+            put("handle", resolvedHandle)
+            put("handleLower", resolvedHandle.lowercase())
+            put("username", cleanUsername)
+            put("usernameLower", cleanUsername.lowercase())
             if (existingPublicPhoto.isBlank() && preservedCustomPhoto.isNotEmpty()) {
               put("photoUrl", preservedCustomPhoto)
             }
+            if (existingPublic.get("followersCount") == null) put("followersCount", 0L)
+            if (existingPublic.get("followingCount") == null) put("followingCount", 0L)
+            if (existingPublic.get("likesReceivedCount") == null) put("likesReceivedCount", 0L)
             put("isOnline", true)
             put("updatedAt", FieldValue.serverTimestamp())
           }
@@ -442,8 +486,8 @@ class SocialRepository(private val db: FirebaseFirestore) {
             id = uid,
             userId = uid,
             uid = uid,
-            handle = existingHandle,
-            username = existingUsername,
+            handle = resolvedHandle,
+            username = cleanUsername,
             displayName = existingName,
             photoUrl = preservedCustomPhoto,
           )
@@ -522,6 +566,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
             put("handle", normalizedHandlePair.first)
             put("handleLower", normalizedHandlePair.first.lowercase())
             put("username", normalizedHandlePair.second)
+            put("usernameLower", normalizedHandlePair.second.lowercase())
           }
           if (photoUrl != null) {
             put("photoUrl", photoUrl.trim().take(MAX_AVATAR_URI_CHARS))
@@ -531,6 +576,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
       val privateUpdates =
         buildMap<String, Any> {
+          put("uid", uid)
           put("displayName", cleanName)
           put("address", address.trim().take(160))
           if (normalizedHandlePair != null) {
@@ -595,6 +641,15 @@ class SocialRepository(private val db: FirebaseFirestore) {
     }
   }
 
+  private suspend fun resolveCounterTargetDoc(targetUid: String) =
+    if (runCatching { db.collection("appUsers").document(targetUid).get().await().exists() }.getOrDefault(false)) {
+      db.collection("appUsers").document(targetUid)
+    } else if (runCatching { db.collection("appusers").document(targetUid).get().await().exists() }.getOrDefault(false)) {
+      db.collection("appusers").document(targetUid)
+    } else {
+      null
+    }
+
   suspend fun toggleFollow(
     selfProfile: PublicProfile,
     targetProfile: PublicProfile,
@@ -615,7 +670,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
     val edgeId = "${uid}_follow_${targetUid}"
     val edgeDoc = db.collection("socialEdges").document(edgeId)
     val selfDoc = db.collection("appUsers").document(uid)
-    val targetDoc = db.collection("appUsers").document(targetUid)
+    val targetDoc = resolveCounterTargetDoc(targetUid)
 
     return try {
       val nextState = !currentlyFollowing
@@ -663,8 +718,24 @@ class SocialRepository(private val db: FirebaseFirestore) {
         batch.delete(edgeDoc)
       }
 
-      batch.update(selfDoc, mapOf("followingCount" to FieldValue.increment(delta), "updatedAt" to FieldValue.serverTimestamp()))
-      batch.update(targetDoc, mapOf("followersCount" to FieldValue.increment(delta), "updatedAt" to FieldValue.serverTimestamp()))
+      batch.set(
+        selfDoc,
+        mapOf(
+          "uid" to uid,
+          "followingCount" to FieldValue.increment(delta),
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+        SetOptions.merge(),
+      )
+      if (targetDoc != null) {
+        batch.update(
+          targetDoc,
+          mapOf(
+            "followersCount" to FieldValue.increment(delta),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          ),
+        )
+      }
       batch.commit().await()
       Result.success(nextState)
     } catch (e: CancellationException) {
@@ -694,7 +765,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
     val likeSubDoc = db.collection("appUsers").document(uid).collection("likes").document(targetUid)
     val edgeId = "${uid}_like_${targetUid}"
     val edgeDoc = db.collection("socialEdges").document(edgeId)
-    val targetDoc = db.collection("appUsers").document(targetUid)
+    val targetDoc = resolveCounterTargetDoc(targetUid)
 
     return try {
       val nextState = !currentlyLiked
@@ -740,13 +811,15 @@ class SocialRepository(private val db: FirebaseFirestore) {
         batch.delete(edgeDoc)
       }
 
-      batch.update(
-        targetDoc,
-        mapOf(
-          "likesReceivedCount" to FieldValue.increment(delta),
-          "updatedAt" to FieldValue.serverTimestamp(),
-        ),
-      )
+      if (targetDoc != null) {
+        batch.update(
+          targetDoc,
+          mapOf(
+            "likesReceivedCount" to FieldValue.increment(delta),
+            "updatedAt" to FieldValue.serverTimestamp(),
+          ),
+        )
+      }
       batch.commit().await()
       Result.success(nextState)
     } catch (e: CancellationException) {
@@ -1033,6 +1106,37 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
     fun buildChatRoomId(uidA: String, uidB: String): String =
       "room_" + listOf(uidA, uidB).sorted().joinToString("_")
+
+    fun buildHandleFromEmail(email: String, fallbackUid: String = ""): String {
+      val cleanEmail = email.trim().lowercase()
+      if (cleanEmail.isBlank()) {
+        return buildHandleFromUid(fallbackUid)
+      }
+      val digest =
+        java.security.MessageDigest.getInstance("SHA-256")
+          .digest(cleanEmail.toByteArray(Charsets.UTF_8))
+      val rawInt =
+        ((digest[0].toInt() and 0x7F) shl 24) or
+          ((digest[1].toInt() and 0xFF) shl 16) or
+          ((digest[2].toInt() and 0xFF) shl 8) or
+          (digest[3].toInt() and 0xFF)
+      val fourDigits = (1000 + (rawInt % 9000)).toString()
+      return "@SL_$fourDigits"
+    }
+
+    private fun buildCollisionSafeHandle(email: String, uid: String): String {
+      val seed = "${email.trim().lowercase()}|$uid"
+      val digest =
+        java.security.MessageDigest.getInstance("SHA-256")
+          .digest(seed.toByteArray(Charsets.UTF_8))
+      val rawInt =
+        ((digest[0].toInt() and 0x7F) shl 24) or
+          ((digest[1].toInt() and 0xFF) shl 16) or
+          ((digest[2].toInt() and 0xFF) shl 8) or
+          (digest[3].toInt() and 0xFF)
+      val fiveDigits = (10000 + (rawInt % 90000)).toString()
+      return "@SL_$fiveDigits"
+    }
 
     fun buildHandleFromUid(uid: String): String {
       val hash = uid.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }

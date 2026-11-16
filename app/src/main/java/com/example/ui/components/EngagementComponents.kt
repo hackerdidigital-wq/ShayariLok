@@ -44,13 +44,9 @@ import com.example.model.SupportedCountry
 import com.example.model.SupportedLanguage
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgeOrange
-import com.example.ui.theme.BadgePurple
-import com.example.ui.theme.CrownGold
-import com.example.ui.theme.DarkSurface
-import com.example.ui.theme.DarkSurfaceVariant
+import com.example.ui.theme.LocalShayariColors
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
-import com.example.ui.theme.NeonVioletGlow
 
 @Composable
 fun DailyStreakAndLocaleBar(
@@ -62,6 +58,7 @@ fun DailyStreakAndLocaleBar(
   modifier: Modifier = Modifier,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   Row(
     modifier = modifier.fillMaxWidth(),
     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -70,8 +67,8 @@ fun DailyStreakAndLocaleBar(
     if (showStreak) {
       Surface(
         shape = RoundedCornerShape(16.dp),
-        color = DarkSurface.copy(alpha = 0.88f),
-        border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.45f)),
+        color = palette.surface.copy(alpha = 0.92f),
+        border = BorderStroke(1.dp, palette.accentGold.copy(alpha = 0.45f)),
         modifier = Modifier.weight(1f).testTag("daily_streak_banner"),
       ) {
         Row(
@@ -100,13 +97,13 @@ fun DailyStreakAndLocaleBar(
               text = "$streakDays ${strings.dayStreakSuffix}",
               style = MaterialTheme.typography.labelLarge,
               fontWeight = FontWeight.ExtraBold,
-              color = CrownGold,
+              color = palette.accentGold,
               maxLines = 1,
             )
             Text(
               text = strings.dailyRewardSubtitle,
               style = MaterialTheme.typography.labelSmall,
-              color = Color(0xFFD2C4EB),
+              color = palette.textSecondary,
               fontSize = 10.sp,
               maxLines = 1,
             )
@@ -117,8 +114,8 @@ fun DailyStreakAndLocaleBar(
 
     Surface(
       shape = RoundedCornerShape(16.dp),
-      color = DarkSurface.copy(alpha = 0.88f),
-      border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.45f)),
+      color = palette.surface.copy(alpha = 0.92f),
+      border = BorderStroke(1.dp, palette.outline),
       modifier =
         Modifier.clip(RoundedCornerShape(16.dp))
           .clickable(onClick = onOpenLocalePicker)
@@ -132,7 +129,7 @@ fun DailyStreakAndLocaleBar(
         Icon(
           painter = painterResource(id = R.drawable.ic_language),
           contentDescription = strings.menuLanguageRegion,
-          tint = CrownGold,
+          tint = palette.accentGold,
           modifier = Modifier.size(18.dp),
         )
         Spacer(modifier = Modifier.width(6.dp))
@@ -151,7 +148,7 @@ fun DailyStreakAndLocaleBar(
             },
           style = MaterialTheme.typography.labelMedium,
           fontWeight = FontWeight.Bold,
-          color = Color.White,
+          color = palette.textPrimary,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
@@ -168,14 +165,15 @@ fun LivePollCard(
   modifier: Modifier = Modifier,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   val hasVoted = !selectedOptionId.isNullOrBlank()
   val effectiveTotal =
     poll.totalVotes + if (hasVoted && poll.options.none { it.id == selectedOptionId && it.votes > 0 }) 1 else 0
 
   Surface(
     shape = RoundedCornerShape(18.dp),
-    color = DarkSurface.copy(alpha = 0.94f),
-    border = BorderStroke(1.dp, NeonPink.copy(alpha = 0.45f)),
+    color = palette.surface.copy(alpha = 0.95f),
+    border = BorderStroke(1.dp, palette.accentPink.copy(alpha = 0.45f)),
     shadowElevation = 4.dp,
     modifier = modifier.fillMaxWidth().testTag("live_poll_card_${poll.id}"),
   ) {
@@ -187,13 +185,13 @@ fun LivePollCard(
       ) {
         Surface(
           shape = RoundedCornerShape(50),
-          color = NeonPink.copy(alpha = 0.22f),
-          border = BorderStroke(0.8.dp, NeonPink.copy(alpha = 0.65f)),
+          color = palette.accentPink.copy(alpha = if (palette.isDark) 0.22f else 0.14f),
+          border = BorderStroke(0.8.dp, palette.accentPink.copy(alpha = 0.65f)),
         ) {
           Text(
             text = strings.livePollBadge,
             style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFFFFB6D9),
+            color = if (palette.isDark) Color(0xFFFFB6D9) else Color(0xFF9B0047),
             fontWeight = FontWeight.ExtraBold,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
           )
@@ -201,7 +199,7 @@ fun LivePollCard(
         Text(
           text = "$effectiveTotal ${strings.votesSuffix}",
           style = MaterialTheme.typography.labelSmall,
-          color = Color(0xFFD2C4EB),
+          color = palette.textSecondary,
         )
       }
 
@@ -211,7 +209,7 @@ fun LivePollCard(
         text = poll.question,
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Bold,
-        color = Color.White,
+        color = palette.textPrimary,
       )
 
       Spacer(modifier = Modifier.height(10.dp))
@@ -225,11 +223,13 @@ fun LivePollCard(
 
           Surface(
             shape = RoundedCornerShape(12.dp),
-            color = if (isChosen) BadgePurple.copy(alpha = 0.55f) else DarkSurfaceVariant.copy(alpha = 0.78f),
+            color =
+              if (isChosen) palette.accentPurple.copy(alpha = if (palette.isDark) 0.50f else 0.16f)
+              else palette.surfaceVariant.copy(alpha = 0.78f),
             border =
               BorderStroke(
                 1.dp,
-                if (isChosen) CrownGold.copy(alpha = 0.85f) else NeonVioletGlow.copy(alpha = 0.3f),
+                if (isChosen) palette.accentGold.copy(alpha = 0.85f) else palette.outline,
               ),
             modifier =
               Modifier.fillMaxWidth()
@@ -248,7 +248,7 @@ fun LivePollCard(
                   text = if (isChosen) "✓ ${option.label}" else option.label,
                   style = MaterialTheme.typography.bodySmall,
                   fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium,
-                  color = Color.White,
+                  color = palette.textPrimary,
                   modifier = Modifier.weight(1f),
                 )
                 if (hasVoted) {
@@ -257,7 +257,7 @@ fun LivePollCard(
                     text = "$percent%",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = if (isChosen) CrownGold else Color(0xFFD2C4EB),
+                    color = if (isChosen) palette.accentGold else palette.textSecondary,
                   )
                 }
               }
@@ -265,8 +265,8 @@ fun LivePollCard(
                 Spacer(modifier = Modifier.height(6.dp))
                 LinearProgressIndicator(
                   progress = { ratio },
-                  color = if (isChosen) CrownGold else NeonPurple,
-                  trackColor = Color.White.copy(alpha = 0.12f),
+                  color = if (isChosen) palette.accentGold else palette.accentPurple,
+                  trackColor = palette.textMuted.copy(alpha = 0.18f),
                   modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(50)),
                 )
               }
@@ -290,14 +290,15 @@ fun LanguageCountrySelectorDialog(
   onDismiss: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   AlertDialog(
     onDismissRequest = onDismiss,
-    containerColor = DarkSurface,
+    containerColor = palette.surface,
     shape = RoundedCornerShape(24.dp),
     title = {
       Text(
         text = strings.menuLanguageRegion,
-        color = Color.White,
+        color = palette.textPrimary,
         fontWeight = FontWeight.Bold,
       )
     },
@@ -306,7 +307,7 @@ fun LanguageCountrySelectorDialog(
         Text(
           text = strings.selectLanguageHeading,
           style = MaterialTheme.typography.labelMedium,
-          color = CrownGold,
+          color = palette.accentGold,
           fontWeight = FontWeight.SemiBold,
         )
         FlowRow(
@@ -317,11 +318,11 @@ fun LanguageCountrySelectorDialog(
             val selected = lang.code.equals(selectedLanguageCode, ignoreCase = true)
             Surface(
               shape = RoundedCornerShape(12.dp),
-              color = if (selected) BadgePurple else DarkSurfaceVariant,
+              color = if (selected) palette.accentPurple else palette.surfaceVariant,
               border =
                 BorderStroke(
                   1.dp,
-                  if (selected) CrownGold else NeonVioletGlow.copy(alpha = 0.35f),
+                  if (selected) palette.accentGold else palette.outline,
                 ),
               modifier =
                 Modifier.clip(RoundedCornerShape(12.dp))
@@ -331,7 +332,7 @@ fun LanguageCountrySelectorDialog(
             ) {
               Text(
                 text = if (lang.isRtl) "${lang.nativeName} (RTL)" else lang.nativeName,
-                color = Color.White,
+                color = if (selected) Color.White else palette.textPrimary,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -344,7 +345,7 @@ fun LanguageCountrySelectorDialog(
         Text(
           text = strings.selectCountryHeading,
           style = MaterialTheme.typography.labelMedium,
-          color = CrownGold,
+          color = palette.accentGold,
           fontWeight = FontWeight.SemiBold,
         )
         FlowRow(
@@ -355,11 +356,11 @@ fun LanguageCountrySelectorDialog(
             val selected = country.code.equals(selectedCountryCode, ignoreCase = true)
             Surface(
               shape = RoundedCornerShape(12.dp),
-              color = if (selected) BadgePurple else DarkSurfaceVariant,
+              color = if (selected) palette.accentPurple else palette.surfaceVariant,
               border =
                 BorderStroke(
                   1.dp,
-                  if (selected) CrownGold else NeonVioletGlow.copy(alpha = 0.35f),
+                  if (selected) palette.accentGold else palette.outline,
                 ),
               modifier =
                 Modifier.clip(RoundedCornerShape(12.dp))
@@ -369,7 +370,7 @@ fun LanguageCountrySelectorDialog(
             ) {
               Text(
                 text = "${country.flagEmoji} ${country.name}".trim(),
-                color = Color.White,
+                color = if (selected) Color.White else palette.textPrimary,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
@@ -381,7 +382,7 @@ fun LanguageCountrySelectorDialog(
     },
     confirmButton = {
       TextButton(onClick = onDismiss) {
-        Text(strings.doneAction, color = CrownGold, fontWeight = FontWeight.Bold)
+        Text(strings.doneAction, color = palette.accentGold, fontWeight = FontWeight.Bold)
       }
     },
   )

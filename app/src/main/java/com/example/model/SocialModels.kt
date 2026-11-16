@@ -50,13 +50,14 @@ data class PublicProfile(
   fun matchesQuery(rawQuery: String): Boolean {
     val q = rawQuery.trim()
     if (q.isEmpty()) return true
-    val stripped = q.removePrefix("@")
+    val stripped = q.removePrefix("@").trim()
     return displayName.contains(q, ignoreCase = true) ||
       effectiveHandle.contains(q, ignoreCase = true) ||
       effectiveHandle.removePrefix("@").contains(stripped, ignoreCase = true) ||
       username.contains(stripped, ignoreCase = true) ||
       city.contains(q, ignoreCase = true) ||
-      bio.contains(q, ignoreCase = true)
+      bio.contains(q, ignoreCase = true) ||
+      (stripped.length >= 4 && effectiveUid.contains(stripped, ignoreCase = true))
   }
 }
 

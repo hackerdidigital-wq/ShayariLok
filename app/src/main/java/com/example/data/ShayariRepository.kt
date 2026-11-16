@@ -135,6 +135,34 @@ class ShayariRepository(context: Context) {
 
   fun isAgeVerified(): Boolean = prefs.getBoolean(KEY_AGE_VERIFIED_18_PLUS, false)
 
+  fun getUserDarkModeOverride(): Boolean? =
+    if (prefs.contains(KEY_USER_DARK_THEME)) prefs.getBoolean(KEY_USER_DARK_THEME, true)
+    else null
+
+  fun setUserDarkModeOverride(dark: Boolean) {
+    prefs.edit().putBoolean(KEY_USER_DARK_THEME, dark).apply()
+  }
+
+  fun saveMergedOverlayConfig(config: ShayariConfig) {
+    try {
+      prefs.edit().putString(KEY_CACHED_OVERLAY_CONFIG_JSON, config.toJson()).apply()
+    } catch (_: Exception) {
+      // Ignore serialization failure
+    }
+  }
+
+  fun loadEffectiveCachedConfig(): ShayariConfig {
+    val overlayJson = prefs.getString(KEY_CACHED_OVERLAY_CONFIG_JSON, null)
+    if (!overlayJson.isNullOrBlank()) {
+      try {
+        return ShayariConfig.fromJson(overlayJson)
+      } catch (_: Exception) {
+        // Fallback to cached remote config
+      }
+    }
+    return loadCachedConfig()
+  }
+
   suspend fun syncUserPreferencesToFirestore(
     db: FirebaseFirestore,
     uid: String,
@@ -502,29 +530,61 @@ class ShayariRepository(context: Context) {
         emitAll(
           docRef.snapshots()
             .map { snapshot ->
-              if (!snapshot.exists()) {
+              val data = snapshot.data
+              if (!snapshot.exists() || data == null) {
                 RealtimeAppConfigOverride()
               } else {
+                val parsedDoc = ShayariConfig.fromFirestoreMap(data)
+                val hasMaintenance =
+                  data.containsKey("maintenance_mode") || data.containsKey("maintenanceMode")
+                val hasAdsEnabled =
+                  data.containsKey("ads_enabled") ||
+                    data.containsKey("adsEnabled") ||
+                    data.containsKey("admob") ||
+                    data.containsKey("ads")
+                val hasDynamicTheme =
+                  data.containsKey("dynamic_theme") ||
+                    data.containsKey("dynamicTheme") ||
+                    data.containsKey("theme")
+                val hasFaqs =
+                  data.containsKey("faqs") ||
+                    data.containsKey("faq_list") ||
+                    data.containsKey("faqList") ||
+                    data.containsKey("faq")
+                val hasNotifications = data.containsKey("notifications")
+                val hasPolicySections =
+                  data.containsKey("privacy_policy_sections") ||
+                    data.containsKey("privacyPolicySections") ||
+                    data.containsKey("privacy_sections") ||
+                    data.containsKey("privacySections")
                 val cats =
-                  (snapshot.get("categories") as? List<*>)
+                  (data["categories"] as? List<*>)
                     ?.mapNotNull { (it as? String)?.trim()?.takeIf { s -> s.isNotEmpty() } }
                     .orEmpty()
                 RealtimeAppConfigOverride(
                   hasOverride = true,
-                  appName = snapshot.getString("app_name")?.ifBlank { snapshot.getString("appName") }.orEmpty(),
-                  maintenanceMode = snapshot.getBoolean("maintenance_mode") ?: snapshot.getBoolean("maintenanceMode"),
+                  appName =
+                    data["app_name"]?.toString()?.trim().orEmpty()
+                      .ifBlank { data["appName"]?.toString()?.trim().orEmpty() },
+                  appLogoUrl = parsedDoc.appLogoUrl,
+                  maintenanceMode = if (hasMaintenance) parsedDoc.maintenanceMode else null,
                   maintenanceMessage =
-                    snapshot.getString("maintenance_message")
-                      ?.ifBlank { snapshot.getString("maintenanceMessage") }
-                      .orEmpty(),
-                  announcementTitle =
-                    snapshot.getString("announcement_title")
-                      ?.ifBlank { snapshot.getString("announcementTitle") }
-                      .orEmpty(),
-                  announcementMessage =
-                    snapshot.getString("announcement_message")
-                      ?.ifBlank { snapshot.getString("announcementMessage") }
-                      .orEmpty(),
+                    data["maintenance_message"]?.toString()?.trim().orEmpty()
+                      .ifBlank { data["maintenanceMessage"]?.toString()?.trim().orEmpty() },
+                  announcementTitle = parsedDoc.announcementTitle,
+                  announcementMessage = parsedDoc.announcementMessage,
+                  privacyPolicyUrl = parsedDoc.privacyPolicyUrl,
+                  privacyPolicyTitle = parsedDoc.privacyPolicyTitle,
+                  privacyPolicyText = parsedDoc.privacyPolicyText,
+                  privacyPolicySections = if (hasPolicySections) parsedDoc.privacyPolicySections else null,
+                  adsEnabled = if (hasAdsEnabled) parsedDoc.adsEnabled else null,
+                  admobAppId = parsedDoc.admobAppId,
+                  bannerAdId = parsedDoc.bannerAdId,
+                  interstitialAdId = parsedDoc.interstitialAdId,
+                  nativeAdId = parsedDoc.nativeAdId,
+                  faqs = if (hasFaqs) parsedDoc.faqs else null,
+                  notifications = if (hasNotifications) parsedDoc.notifications else null,
+                  dynamicTheme = if (hasDynamicTheme) parsedDoc.dynamicTheme else null,
                   categories = cats,
                 )
               }
@@ -550,10 +610,23 @@ class ShayariRepository(context: Context) {
   data class RealtimeAppConfigOverride(
     val hasOverride: Boolean = false,
     val appName: String = "",
+    val appLogoUrl: String = "",
     val maintenanceMode: Boolean? = null,
     val maintenanceMessage: String = "",
     val announcementTitle: String = "",
     val announcementMessage: String = "",
+    val privacyPolicyUrl: String = "",
+    val privacyPolicyTitle: String = "",
+    val privacyPolicyText: String = "",
+    val privacyPolicySections: List<com.example.model.ShayariPolicySection>? = null,
+    val adsEnabled: Boolean? = null,
+    val admobAppId: String = "",
+    val bannerAdId: String = "",
+    val interstitialAdId: String = "",
+    val nativeAdId: String = "",
+    val faqs: List<com.example.model.ShayariFaq>? = null,
+    val notifications: List<com.example.model.ShayariNotification>? = null,
+    val dynamicTheme: com.example.model.DynamicThemeConfig? = null,
     val categories: List<String> = emptyList(),
   )
 
@@ -567,6 +640,7 @@ class ShayariRepository(context: Context) {
   companion object {
     private const val PREFS_NAME = "shayari_lok_prefs"
     private const val KEY_CACHED_CONFIG_JSON = "cached_config_json"
+    private const val KEY_CACHED_OVERLAY_CONFIG_JSON = "cached_overlay_config_json"
     private const val KEY_LAST_SYNCED_AT = "last_synced_at"
     private const val KEY_FAVORITE_IDS = "favorite_shayari_ids"
     private const val KEY_TEXT_SIZE = "shayari_text_size"
@@ -578,6 +652,7 @@ class ShayariRepository(context: Context) {
     private const val KEY_POLL_VOTES_JSON = "poll_votes_json"
     private const val KEY_ALLOW_ADULT_18_PLUS = "allow_adult_18_plus"
     private const val KEY_AGE_VERIFIED_18_PLUS = "age_verified_18_plus"
+    private const val KEY_USER_DARK_THEME = "user_dark_theme_override"
     private const val CONNECT_TIMEOUT_MS = 10000
     private const val READ_TIMEOUT_MS = 10000
   }

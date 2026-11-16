@@ -14,6 +14,7 @@
 -keep class com.google.android.libraries.identity.googleid.** { *; }
 -keep class com.google.firebase.auth.** { *; }
 -keep class com.google.android.gms.auth.** { *; }
+-keep class com.google.android.gms.ads.** { *; }
 -keepclassmembers class * implements android.os.Parcelable {
     public static final ** CREATOR;
 }

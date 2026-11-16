@@ -52,4 +52,5 @@
     <string name="language_country_title">Language &amp; Region</string>
     <string name="daily_streak_label">Daily Streak</string>
     <string name="live_poll_badge">LIVE POLL</string>
+    <string name="admob_app_id">ca-app-pub-3940256099942544~3347511713</string>
 </resources>

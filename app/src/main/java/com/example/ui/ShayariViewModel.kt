@@ -111,6 +111,7 @@ data class ShayariUiState(
   val selectedCountryCode: String = "IN",
   val isRtlLayout: Boolean = false,
   val allowAdultContent: Boolean = false,
+  val isDarkTheme: Boolean = true,
   val dailyStreakDays: Int = 1,
   val votedPollOptions: Map<String, String> = emptyMap(),
 )
@@ -133,6 +134,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   private var selectedLanguageCode: String = repository.getSelectedLanguageCode()
   private var selectedCountryCode: String = repository.getSelectedCountryCode()
   private var allowAdultContent: Boolean = repository.isAdultContentAllowed()
+  private var userDarkThemeOverride: Boolean? = repository.getUserDarkModeOverride()
   private var dailyStreakDays: Int = repository.recordDailyVisitAndGetStreak()
   private var votedPollOptions: Map<String, String> = repository.getVotedPollOptions()
   private var searchQuery: String = ""
@@ -147,6 +149,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
 
   init {
     val initialOnline = repository.isNetworkAvailable()
+    val effectiveDark = userDarkThemeOverride ?: currentConfig.dynamicTheme.darkMode
     _uiState.update {
       it.copy(
         isNetworkConnected = initialOnline,
@@ -156,6 +159,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         selectedCountryCode = selectedCountryCode,
         isRtlLayout = computeIsRtl(selectedLanguageCode, currentConfig),
         allowAdultContent = allowAdultContent,
+        isDarkTheme = effectiveDark,
         dailyStreakDays = dailyStreakDays,
         votedPollOptions = votedPollOptions,
       )
@@ -242,6 +246,17 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     publishCurrentState(syncMessage = null)
   }
 
+  fun toggleDarkTheme() {
+    val currentDark = userDarkThemeOverride ?: currentConfig.dynamicTheme.darkMode
+    setDarkTheme(!currentDark)
+  }
+
+  fun setDarkTheme(enabled: Boolean) {
+    userDarkThemeOverride = enabled
+    repository.setUserDarkModeOverride(enabled)
+    publishCurrentState(syncMessage = null)
+  }
+
   fun setAdultContentAllowed(allowed: Boolean) {
     allowAdultContent = allowed
     repository.setAdultContentAllowed(allowed)
@@ -289,6 +304,18 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     val effectiveBase =
       if (publicSite != null) {
         publicSite.copy(
+          appLogoUrl = publicSite.appLogoUrl.ifBlank { base.appLogoUrl },
+          privacyPolicyUrl = publicSite.privacyPolicyUrl.ifBlank { base.privacyPolicyUrl },
+          privacyPolicyTitle = publicSite.privacyPolicyTitle.ifBlank { base.privacyPolicyTitle },
+          privacyPolicyText = publicSite.privacyPolicyText.ifBlank { base.privacyPolicyText },
+          privacyPolicySections =
+            if (publicSite.privacyPolicySections.isNotEmpty()) publicSite.privacyPolicySections
+            else base.privacyPolicySections,
+          admobAppId = publicSite.admobAppId.ifBlank { base.admobAppId },
+          bannerAdId = publicSite.bannerAdId.ifBlank { base.bannerAdId },
+          interstitialAdId = publicSite.interstitialAdId.ifBlank { base.interstitialAdId },
+          nativeAdId = publicSite.nativeAdId.ifBlank { base.nativeAdId },
+          faqs = if (publicSite.faqs.isNotEmpty()) publicSite.faqs else base.faqs,
           shayariList =
             if (publicSite.shayariList.isNotEmpty()) publicSite.shayariList else base.shayariList,
           notifications =
@@ -323,15 +350,32 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         }
       }
 
-    return effectiveBase.copy(
-      appName = cfg.appName.ifBlank { effectiveBase.appName },
-      maintenanceMode = cfg.maintenanceMode ?: effectiveBase.maintenanceMode,
-      maintenanceMessage = cfg.maintenanceMessage.ifBlank { effectiveBase.maintenanceMessage },
-      announcementTitle = cfg.announcementTitle.ifBlank { effectiveBase.announcementTitle },
-      announcementMessage = cfg.announcementMessage.ifBlank { effectiveBase.announcementMessage },
-      categories = mergedCategories,
-      shayariList = combinedItems,
-    )
+    val merged =
+      effectiveBase.copy(
+        appName = cfg.appName.ifBlank { effectiveBase.appName },
+        appLogoUrl = cfg.appLogoUrl.ifBlank { effectiveBase.appLogoUrl },
+        maintenanceMode = cfg.maintenanceMode ?: effectiveBase.maintenanceMode,
+        maintenanceMessage = cfg.maintenanceMessage.ifBlank { effectiveBase.maintenanceMessage },
+        announcementTitle = cfg.announcementTitle.ifBlank { effectiveBase.announcementTitle },
+        announcementMessage = cfg.announcementMessage.ifBlank { effectiveBase.announcementMessage },
+        privacyPolicyUrl = cfg.privacyPolicyUrl.ifBlank { effectiveBase.privacyPolicyUrl },
+        privacyPolicyTitle = cfg.privacyPolicyTitle.ifBlank { effectiveBase.privacyPolicyTitle },
+        privacyPolicyText = cfg.privacyPolicyText.ifBlank { effectiveBase.privacyPolicyText },
+        privacyPolicySections =
+          cfg.privacyPolicySections?.takeIf { it.isNotEmpty() } ?: effectiveBase.privacyPolicySections,
+        adsEnabled = cfg.adsEnabled ?: effectiveBase.adsEnabled,
+        admobAppId = cfg.admobAppId.ifBlank { effectiveBase.admobAppId },
+        bannerAdId = cfg.bannerAdId.ifBlank { effectiveBase.bannerAdId },
+        interstitialAdId = cfg.interstitialAdId.ifBlank { effectiveBase.interstitialAdId },
+        nativeAdId = cfg.nativeAdId.ifBlank { effectiveBase.nativeAdId },
+        faqs = cfg.faqs?.takeIf { it.isNotEmpty() } ?: effectiveBase.faqs,
+        notifications = cfg.notifications?.takeIf { it.isNotEmpty() } ?: effectiveBase.notifications,
+        dynamicTheme = cfg.dynamicTheme ?: effectiveBase.dynamicTheme,
+        categories = mergedCategories,
+        shayariList = combinedItems,
+      )
+    repository.saveMergedOverlayConfig(merged)
+    return merged
   }
 
   fun onAppResumed() {
@@ -342,6 +386,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     selectedLanguageCode = repository.getSelectedLanguageCode()
     selectedCountryCode = repository.getSelectedCountryCode()
     allowAdultContent = repository.isAdultContentAllowed()
+    userDarkThemeOverride = repository.getUserDarkModeOverride()
     dailyStreakDays = repository.recordDailyVisitAndGetStreak()
     votedPollOptions = repository.getVotedPollOptions()
     if (
@@ -535,6 +580,8 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         0
       }
 
+    val effectiveDark = userDarkThemeOverride ?: currentConfig.dynamicTheme.darkMode
+
     _uiState.update { previous ->
       previous.copy(
         screenState = screenState,
@@ -549,6 +596,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         selectedCountryCode = selectedCountryCode,
         isRtlLayout = computeIsRtl(selectedLanguageCode, currentConfig),
         allowAdultContent = allowAdultContent,
+        isDarkTheme = effectiveDark,
         dailyStreakDays = dailyStreakDays,
         votedPollOptions = votedPollOptions,
       )

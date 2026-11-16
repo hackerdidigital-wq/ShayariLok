@@ -44,6 +44,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,14 +63,16 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.data.ShayariRepository
 import com.example.data.ShayariTextSize
+import com.example.model.ShayariConfig
 import com.example.model.SupportedLanguage
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.i18n.appStringsFor
 import com.example.ui.screens.AgeConfirmationDialog
+import com.example.ui.screens.FaqSheet
 import com.example.ui.theme.BadgePink
-import com.example.ui.theme.CrownGold
-import com.example.ui.theme.DarkBackgroundBottom
+import com.example.ui.theme.LocalShayariColors
 import com.example.ui.theme.ShayariLokTheme
+import com.google.firebase.firestore.FirebaseFirestore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -80,8 +83,33 @@ class SettingsActivity : ComponentActivity() {
     enableEdgeToEdge()
     val repository = ShayariRepository(this)
     setContent {
-      val config = remember { repository.loadCachedConfig() }
+      var config by remember { mutableStateOf(repository.loadEffectiveCachedConfig()) }
       var selectedLanguageCode by remember { mutableStateOf(repository.getSelectedLanguageCode()) }
+      var isDarkTheme by remember {
+        mutableStateOf(repository.getUserDarkModeOverride() ?: config.dynamicTheme.darkMode)
+      }
+
+      LaunchedEffect(Unit) {
+        try {
+          val dbId = getString(R.string.firestore_database_id)
+          val firestore = FirebaseFirestore.getInstance(dbId)
+          repository.observeRealtimeShayariOverlay(firestore).collect { overlay ->
+            val current = repository.loadEffectiveCachedConfig()
+            val site = overlay.publicSiteConfig
+            val app = overlay.appConfigOverride
+            config =
+              current.copy(
+                appName = app.appName.ifBlank { site?.appName ?: current.appName },
+                appLogoUrl = app.appLogoUrl.ifBlank { site?.appLogoUrl ?: current.appLogoUrl },
+                faqs = app.faqs?.takeIf { it.isNotEmpty() } ?: site?.faqs?.takeIf { it.isNotEmpty() } ?: current.faqs,
+                dynamicTheme = app.dynamicTheme ?: site?.dynamicTheme ?: current.dynamicTheme,
+              )
+          }
+        } catch (_: Exception) {
+          // Offline or Robolectric fallback
+        }
+      }
+
       val isRtl =
         remember(selectedLanguageCode, config) {
           config.supportedLanguages.firstOrNull {
@@ -91,14 +119,20 @@ class SettingsActivity : ComponentActivity() {
       val strings = remember(selectedLanguageCode) { appStringsFor(selectedLanguageCode) }
       val layoutDir = if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
 
-      ShayariLokTheme(dynamicTheme = config.dynamicTheme) {
+      ShayariLokTheme(darkTheme = isDarkTheme, dynamicTheme = config.dynamicTheme) {
         CompositionLocalProvider(
           LocalAppStrings provides strings,
           LocalLayoutDirection provides layoutDir,
         ) {
           SettingsContent(
             repository = repository,
+            config = config,
             selectedLanguageCode = selectedLanguageCode,
+            isDarkTheme = isDarkTheme,
+            onToggleDarkTheme = { dark ->
+              isDarkTheme = dark
+              repository.setUserDarkModeOverride(dark)
+            },
             onSelectLanguage = { code ->
               selectedLanguageCode = code
               repository.setSelectedLanguageCode(code)
@@ -118,22 +152,26 @@ class SettingsActivity : ComponentActivity() {
 @Composable
 private fun SettingsContent(
   repository: ShayariRepository,
+  config: ShayariConfig,
   selectedLanguageCode: String,
+  isDarkTheme: Boolean,
+  onToggleDarkTheme: (Boolean) -> Unit,
   onSelectLanguage: (String) -> Unit,
   onOpenPrivacyPolicy: () -> Unit,
   onBack: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
-  val config = remember { repository.loadCachedConfig() }
+  val palette = LocalShayariColors.current
   val lastSyncedMillis = remember { repository.getLastSyncedTimeMillis() }
   val hasRemoteCache = remember { repository.hasCachedRemoteConfig() }
   var selectedTextSize by remember { mutableStateOf(repository.getShayariTextSize()) }
   var allowAdultContent by remember { mutableStateOf(repository.isAdultContentAllowed()) }
   var showAgeConfirmDialog by remember { mutableStateOf(false) }
+  var showFaqSheet by remember { mutableStateOf(false) }
 
   val bgGradient =
     Brush.verticalGradient(
-      colors = listOf(MaterialTheme.colorScheme.background, DarkBackgroundBottom)
+      colors = listOf(palette.bgTop, palette.bgMid, palette.bgBottom)
     )
 
   val formattedSyncTime =
@@ -146,7 +184,7 @@ private fun SettingsContent(
     }
 
   Scaffold(
-    containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0f),
+    containerColor = Color.Transparent,
     contentWindowInsets = WindowInsets.safeDrawing,
     topBar = {
       TopAppBar(
@@ -165,13 +203,14 @@ private fun SettingsContent(
             Icon(
               painter = painterResource(id = R.drawable.ic_arrow_back),
               contentDescription = stringResource(R.string.cd_back),
+              tint = Color.White,
             )
           }
         },
         colors =
           TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
-            titleContentColor = MaterialTheme.colorScheme.onBackground,
+            containerColor = palette.headerStart,
+            titleContentColor = Color.White,
           ),
       )
     },
@@ -189,6 +228,63 @@ private fun SettingsContent(
         modifier = Modifier.widthIn(max = 620.dp).fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
+        // 0. App Appearance (Dark / Light Theme Toggle)
+        Surface(
+          shape = RoundedCornerShape(20.dp),
+          color = palette.surface,
+          border = BorderStroke(1.dp, palette.outline.copy(alpha = 0.65f)),
+        ) {
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 14.dp)
+                .testTag("settings_theme_row"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.weight(1f).padding(end = 12.dp),
+            ) {
+              Icon(
+                painter =
+                  painterResource(
+                    id = if (isDarkTheme) R.drawable.ic_dark_mode else R.drawable.ic_light_mode
+                  ),
+                contentDescription = null,
+                tint = palette.accentGold,
+                modifier = Modifier.size(22.dp),
+              )
+              Spacer(modifier = Modifier.width(12.dp))
+              Column {
+                Text(
+                  text = strings.themeModeTitle,
+                  style = MaterialTheme.typography.titleMedium,
+                  color = palette.textPrimary,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                  text = if (isDarkTheme) strings.darkModeLabel else strings.lightModeLabel,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = palette.textSecondary,
+                )
+              }
+            }
+            Switch(
+              checked = isDarkTheme,
+              onCheckedChange = onToggleDarkTheme,
+              colors =
+                SwitchDefaults.colors(
+                  checkedThumbColor = Color.White,
+                  checkedTrackColor = palette.accentPurple,
+                  uncheckedThumbColor = palette.accentGold,
+                  uncheckedTrackColor = palette.surfaceVariant,
+                ),
+              modifier = Modifier.testTag("settings_theme_switch"),
+            )
+          }
+        }
+
         // 1. Live App Language Selector
         Surface(
           shape = RoundedCornerShape(20.dp),
@@ -327,7 +423,7 @@ private fun SettingsContent(
               Icon(
                 painter = painterResource(id = R.drawable.ic_shield),
                 contentDescription = null,
-                tint = if (allowAdultContent) BadgePink else CrownGold,
+                tint = if (allowAdultContent) BadgePink else palette.accentGold,
                 modifier = Modifier.size(22.dp),
               )
               Spacer(modifier = Modifier.width(12.dp))
@@ -413,7 +509,51 @@ private fun SettingsContent(
           }
         }
 
-        // 5. Privacy Policy (In-App Full Page)
+        // 5. Help & FAQs (Live Admin Synced)
+        Surface(
+          shape = RoundedCornerShape(20.dp),
+          color = MaterialTheme.colorScheme.surface,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.65f)),
+        ) {
+          val faqInteraction = remember { MutableInteractionSource() }
+          Row(
+            modifier =
+              Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .clickable(
+                  interactionSource = faqInteraction,
+                  indication = null,
+                  onClick = { showFaqSheet = true },
+                )
+                .minimumInteractiveComponentSize()
+                .padding(horizontal = 18.dp, vertical = 16.dp)
+                .testTag("settings_faq_button"),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+              Text(
+                text = strings.faqTitle,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+              )
+              Spacer(modifier = Modifier.height(2.dp))
+              Text(
+                text = "${config.faqs.size} ${strings.faqSubtitle}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+            Icon(
+              painter = painterResource(id = R.drawable.ic_faq),
+              contentDescription = strings.faqTitle,
+              tint = palette.accentGold,
+              modifier = Modifier.size(22.dp),
+            )
+          }
+        }
+
+        // 6. Privacy Policy (In-App Full Page)
         Surface(
           shape = RoundedCornerShape(20.dp),
           color = MaterialTheme.colorScheme.surface,
@@ -457,7 +597,7 @@ private fun SettingsContent(
           }
         }
 
-        // 6. App & Developer Info
+        // 7. App & Developer Info
         Surface(
           shape = RoundedCornerShape(20.dp),
           color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
@@ -493,6 +633,13 @@ private fun SettingsContent(
         Spacer(modifier = Modifier.height(12.dp))
       }
     }
+  }
+
+  if (showFaqSheet) {
+    FaqSheet(
+      faqs = config.faqs,
+      onDismiss = { showFaqSheet = false },
+    )
   }
 
   if (showAgeConfirmDialog) {

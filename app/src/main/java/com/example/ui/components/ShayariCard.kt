@@ -60,6 +60,7 @@ import com.example.data.rememberShayariImageBitmap
 import com.example.model.ShayariItem
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.CrownGold
+import com.example.ui.theme.LocalShayariColors
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
 import com.example.ui.theme.NeonVioletGlow
@@ -78,6 +79,7 @@ fun ShayariCard(
   modifier: Modifier = Modifier,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   var justCopied by remember(item.id) { mutableStateOf(false) }
 
   // Smooth entrance animation per card
@@ -111,7 +113,7 @@ fun ShayariCard(
 
   val heartColor by
     animateColorAsState(
-      targetValue = if (isFavorite) NeonPink else Color.White.copy(alpha = 0.90f),
+      targetValue = if (isFavorite) NeonPink else palette.textSecondary,
       animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
       label = "favoriteColor",
     )
@@ -136,8 +138,8 @@ fun ShayariCard(
 
   ElevatedCard(
     shape = cardShape,
-    elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp),
-    colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF130826)),
+    elevation = CardDefaults.elevatedCardElevation(defaultElevation = if (palette.isDark) 6.dp else 3.dp),
+    colors = CardDefaults.elevatedCardColors(containerColor = palette.cardGradientStart),
     modifier =
       modifier
         .fillMaxWidth()
@@ -151,9 +153,9 @@ fun ShayariCard(
             Brush.linearGradient(
               colors =
                 listOf(
-                  NeonVioletGlow.copy(alpha = 0.45f),
-                  NeonPink.copy(alpha = 0.25f),
-                  CrownGold.copy(alpha = 0.28f),
+                  palette.accentViolet.copy(alpha = if (palette.isDark) 0.45f else 0.28f),
+                  palette.accentPink.copy(alpha = if (palette.isDark) 0.25f else 0.18f),
+                  palette.accentGold.copy(alpha = if (palette.isDark) 0.28f else 0.22f),
                 )
             ),
           shape = cardShape,
@@ -166,11 +168,18 @@ fun ShayariCard(
           .background(
             Brush.horizontalGradient(
               colors =
-                listOf(
-                  Color(0xFF1C0A3A),
-                  Color(0xFF130726),
-                  Color(0xFF0E061B),
-                )
+                if (palette.isDark) {
+                  listOf(
+                    Color(0xFF1C0A3A),
+                    Color(0xFF130726),
+                    Color(0xFF0E061B),
+                  )
+                } else {
+                  listOf(
+                    palette.cardGradientStart,
+                    palette.cardGradientEnd,
+                  )
+                }
             )
           )
           .padding(12.dp),
@@ -246,14 +255,14 @@ fun ShayariCard(
         ) {
           Surface(
             shape = RoundedCornerShape(50),
-            color = NeonPurple.copy(alpha = 0.28f),
-            border = BorderStroke(0.8.dp, NeonVioletGlow.copy(alpha = 0.5f)),
+            color = palette.accentPurple.copy(alpha = if (palette.isDark) 0.28f else 0.12f),
+            border = BorderStroke(0.8.dp, palette.accentViolet.copy(alpha = 0.45f)),
           ) {
             Text(
               text = strings.categoryLabel(item.category),
               style = MaterialTheme.typography.labelSmall,
               fontWeight = FontWeight.SemiBold,
-              color = Color(0xFFEBD8FF),
+              color = if (palette.isDark) Color(0xFFEBD8FF) else palette.accentPurple,
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
               modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
@@ -262,14 +271,14 @@ fun ShayariCard(
           if (item.isAdult) {
             Surface(
               shape = RoundedCornerShape(50),
-              color = NeonPink.copy(alpha = 0.24f),
+              color = NeonPink.copy(alpha = if (palette.isDark) 0.24f else 0.14f),
               border = BorderStroke(0.8.dp, NeonPink.copy(alpha = 0.65f)),
             ) {
               Text(
                 text = strings.adultBadge18Plus,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFFFD0E3),
+                color = if (palette.isDark) Color(0xFFFFD0E3) else Color(0xFFA00049),
                 maxLines = 1,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
               )
@@ -287,7 +296,7 @@ fun ShayariCard(
               lineHeight = textSize.lineHeightSp.sp,
               fontWeight = FontWeight.Medium,
             ),
-          color = Color.White,
+          color = palette.textPrimary,
           textAlign = TextAlign.Start,
           modifier = Modifier.fillMaxWidth().padding(end = 2.dp),
         )
@@ -313,7 +322,7 @@ fun ShayariCard(
             CardIconAction(
               iconRes = R.drawable.ic_whatsapp,
               contentDescription = strings.actionWhatsApp,
-              tint = Color(0xFF4ADE80),
+              tint = if (palette.isDark) Color(0xFF4ADE80) else Color(0xFF15803D),
               iconScale = 1f,
               testTag = "whatsapp_button_${item.id}",
               onClick = { onWhatsAppClick(item) },
@@ -322,7 +331,7 @@ fun ShayariCard(
           CardIconAction(
             iconRes = R.drawable.ic_share,
             contentDescription = strings.actionShare,
-            tint = Color.White.copy(alpha = 0.88f),
+            tint = palette.textSecondary,
             iconScale = 1f,
             testTag = "share_button_${item.id}",
             onClick = { onShareClick(item) },
@@ -347,17 +356,19 @@ private fun SmartCopyPillButton(
   testTag: String,
   onClick: () -> Unit,
 ) {
+  val palette = LocalShayariColors.current
   val interactionSource = remember { MutableInteractionSource() }
   val containerColor by
     animateColorAsState(
       targetValue =
-        if (justCopied) CrownGold.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.10f),
+        if (justCopied) palette.accentGold.copy(alpha = if (palette.isDark) 0.22f else 0.16f)
+        else palette.pillSurface,
       animationSpec = tween(durationMillis = 200),
       label = "copyBg",
     )
   val contentColor by
     animateColorAsState(
-      targetValue = if (justCopied) CrownGold else Color(0xFFF3EAFF),
+      targetValue = if (justCopied) palette.accentGold else palette.textPrimary,
       animationSpec = tween(durationMillis = 200),
       label = "copyTint",
     )
@@ -389,7 +400,9 @@ private fun SmartCopyPillButton(
       border =
         BorderStroke(
           width = 0.9.dp,
-          color = if (justCopied) CrownGold.copy(alpha = 0.7f) else NeonVioletGlow.copy(alpha = 0.45f),
+          color =
+            if (justCopied) palette.accentGold.copy(alpha = 0.7f)
+            else palette.outline,
         ),
     ) {
       Row(

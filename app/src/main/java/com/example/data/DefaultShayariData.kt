@@ -18,15 +18,25 @@ object DefaultShayariData {
     """
     {
       "app_name": "Shayari Lok",
+      "app_logo_url": "",
       "latest_version_code": 1,
       "force_update_url": "https://play.google.com/store/apps/details?id=com.cyberking.shayarilok",
       "maintenance_mode": false,
       "maintenance_message": "हम ऐप को और बेहतर बना रहे हैं। कृपया कुछ समय बाद पुनः प्रयास करें।",
       "privacy_policy_url": "https://hackerdidigital-wq.github.io/ShayariLok-Admin-/privacy.html",
+      "privacy_policy_text": "",
       "social_link": "https://t.me/shayarilok_official",
       "ads_enabled": true,
+      "admob_app_id": "ca-app-pub-3940256099942544~3347511713",
       "banner_ad_id": "ca-app-pub-3940256099942544/6300978111",
       "interstitial_ad_id": "ca-app-pub-3940256099942544/1033173712",
+      "native_ad_id": "",
+      "dynamic_theme": {
+        "primary_color": "#7B1CFA",
+        "accent_color": "#FF2E93",
+        "dark_mode": true,
+        "card_style": "royal_glass"
+      },
       "announcement_title": "नई हिंदी शायरी संग्रह लाइव है",
       "announcement_message": "आज ही Love और Motivation कैटेगरी में नई चुनिंदा शायरियाँ पढ़ें और दोस्तों के साथ शेयर करें।",
       "notifications": [
@@ -43,6 +53,32 @@ object DefaultShayariData {
           "message": "वन-टैप कॉपी और WhatsApp शेयर फ़ीचर के साथ नया अपडेट उपलब्ध है।",
           "badge": "App Info",
           "time_label": "Pinned"
+        }
+      ],
+      "faqs": [
+        {
+          "id": "faq_1",
+          "category": "Account & ID",
+          "question": "How is my unique @SL_ ID generated?",
+          "answer": "Your unique @SL_ handle is automatically generated from your signed-in Google email so friends can discover and message you securely across devices."
+        },
+        {
+          "id": "faq_2",
+          "category": "Profile",
+          "question": "How do I update my photo, Bio, City, and Address?",
+          "answer": "Open the Profile tab, tap Edit Profile, pick a photo straight from your phone gallery, fill in your Bio, City, and Address, and tap Save Profile."
+        },
+        {
+          "id": "faq_3",
+          "category": "Chat & Friends",
+          "question": "How can I find a friend and send a private SMS/chat?",
+          "answer": "Go to the Friends tab, search by your friend's @SL_ ID, name, or city, and tap Follow or Chat to start an instant private 1-on-1 conversation."
+        },
+        {
+          "id": "faq_4",
+          "category": "Appearance",
+          "question": "Can I switch between Dark Theme and Light Theme?",
+          "answer": "Yes! Open the side menu or Settings & Info to switch between Royal Dark Theme and Light Theme anytime."
         }
       ],
       "categories": [

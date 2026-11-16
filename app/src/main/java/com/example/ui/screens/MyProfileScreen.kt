@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.ActivityNotFoundException
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -61,13 +62,9 @@ import com.example.ui.SocialUiState
 import com.example.ui.components.UserAvatar
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgePink
-import com.example.ui.theme.BadgePurple
-import com.example.ui.theme.CrownGold
-import com.example.ui.theme.DarkSurface
-import com.example.ui.theme.DarkSurfaceVariant
+import com.example.ui.theme.LocalShayariColors
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
-import com.example.ui.theme.NeonVioletGlow
 
 @Composable
 fun MyProfileScreen(
@@ -85,6 +82,7 @@ fun MyProfileScreen(
   modifier: Modifier = Modifier,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   var showEditDialog by remember { mutableStateOf(false) }
   var showAgeConfirmDialog by remember { mutableStateOf(false) }
   val profile = uiState.myProfile
@@ -96,10 +94,23 @@ fun MyProfileScreen(
       }
     }
 
+  val getContentLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+      if (uri != null) {
+        onPickGalleryAvatar(uri)
+      }
+    }
+
   val launchGalleryPicker: () -> Unit = {
-    photoPickerLauncher.launch(
-      PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-    )
+    try {
+      photoPickerLauncher.launch(
+        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+      )
+    } catch (_: ActivityNotFoundException) {
+      runCatching { getContentLauncher.launch("image/*") }
+    } catch (_: Exception) {
+      runCatching { getContentLauncher.launch("image/*") }
+    }
   }
 
   LazyColumn(
@@ -111,8 +122,8 @@ fun MyProfileScreen(
     item {
       Surface(
         shape = RoundedCornerShape(24.dp),
-        color = DarkSurface.copy(alpha = 0.94f),
-        border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.45f)),
+        color = palette.surface.copy(alpha = 0.96f),
+        border = BorderStroke(1.dp, palette.accentViolet.copy(alpha = 0.45f)),
         shadowElevation = 6.dp,
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
       ) {
@@ -135,14 +146,14 @@ fun MyProfileScreen(
             )
             Surface(
               shape = CircleShape,
-              color = if (uiState.isUploadingAvatar) DarkSurfaceVariant else BadgePink,
+              color = if (uiState.isUploadingAvatar) palette.surfaceVariant else BadgePink,
               border = BorderStroke(1.5.dp, Color.White),
               modifier = Modifier.size(28.dp),
             ) {
               Box(contentAlignment = Alignment.Center) {
                 if (uiState.isUploadingAvatar) {
                   CircularProgressIndicator(
-                    color = CrownGold,
+                    color = palette.accentGold,
                     strokeWidth = 2.dp,
                     modifier = Modifier.size(14.dp),
                   )
@@ -168,7 +179,7 @@ fun MyProfileScreen(
               text =
                 if (uiState.isUploadingAvatar) strings.uploadingPhoto else strings.changePhotoGallery,
               style = MaterialTheme.typography.labelMedium,
-              color = CrownGold,
+              color = palette.accentGold,
               fontWeight = FontWeight.SemiBold,
             )
           }
@@ -179,7 +190,7 @@ fun MyProfileScreen(
             text = profile.displayName.ifBlank { "Shayari Lover" },
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = palette.textPrimary,
             textAlign = TextAlign.Center,
           )
 
@@ -188,7 +199,7 @@ fun MyProfileScreen(
             Text(
               text = uiState.userEmail,
               style = MaterialTheme.typography.bodySmall,
-              color = Color(0xFFD2C4EB),
+              color = palette.textSecondary,
               textAlign = TextAlign.Center,
             )
           }
@@ -197,8 +208,8 @@ fun MyProfileScreen(
 
           Surface(
             shape = RoundedCornerShape(50),
-            color = DarkSurfaceVariant,
-            border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.65f)),
+            color = palette.pillSurface,
+            border = BorderStroke(1.dp, palette.accentGold.copy(alpha = 0.65f)),
             modifier =
               Modifier.clip(RoundedCornerShape(50))
                 .clickable { onCopyHandle(profile.effectiveHandle) }
@@ -212,14 +223,14 @@ fun MyProfileScreen(
               Text(
                 text = profile.effectiveHandle,
                 style = MaterialTheme.typography.labelLarge,
-                color = CrownGold,
+                color = palette.accentGold,
                 fontWeight = FontWeight.ExtraBold,
               )
               Spacer(modifier = Modifier.width(6.dp))
               Icon(
                 painter = painterResource(id = R.drawable.ic_copy),
                 contentDescription = strings.actionCopy,
-                tint = CrownGold,
+                tint = palette.accentGold,
                 modifier = Modifier.size(14.dp),
               )
             }
@@ -237,14 +248,14 @@ fun MyProfileScreen(
               Icon(
                 painter = painterResource(id = R.drawable.ic_location),
                 contentDescription = null,
-                tint = Color(0xFFD2C4EB),
+                tint = palette.textSecondary,
                 modifier = Modifier.size(15.dp),
               )
               Spacer(modifier = Modifier.width(4.dp))
               Text(
                 text = locationLabel,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFFD2C4EB),
+                color = palette.textSecondary,
               )
             }
           }
@@ -254,7 +265,7 @@ fun MyProfileScreen(
           Text(
             text = profile.bio.ifBlank { strings.tapEditBioHint },
             style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.9f),
+            color = palette.textPrimary.copy(alpha = 0.9f),
             textAlign = TextAlign.Center,
           )
 
@@ -262,7 +273,7 @@ fun MyProfileScreen(
 
           Surface(
             shape = RoundedCornerShape(16.dp),
-            color = DarkSurfaceVariant.copy(alpha = 0.8f),
+            color = palette.surfaceVariant.copy(alpha = 0.85f),
             modifier = Modifier.fillMaxWidth(),
           ) {
             Row(
@@ -301,14 +312,14 @@ fun MyProfileScreen(
             OutlinedButton(
               onClick = onOpenLocalePicker,
               shape = RoundedCornerShape(14.dp),
-              border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.5f)),
+              border = BorderStroke(1.dp, palette.accentGold.copy(alpha = 0.55f)),
               modifier =
                 Modifier.minimumInteractiveComponentSize().testTag("profile_language_button"),
             ) {
               Icon(
                 painter = painterResource(id = R.drawable.ic_language),
                 contentDescription = strings.appLanguageTitle,
-                tint = CrownGold,
+                tint = palette.accentGold,
                 modifier = Modifier.size(18.dp),
               )
             }
@@ -316,14 +327,14 @@ fun MyProfileScreen(
             OutlinedButton(
               onClick = onOpenSettings,
               shape = RoundedCornerShape(14.dp),
-              border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.5f)),
+              border = BorderStroke(1.dp, palette.accentViolet.copy(alpha = 0.5f)),
               modifier =
                 Modifier.minimumInteractiveComponentSize().testTag("profile_settings_button"),
             ) {
               Icon(
                 painter = painterResource(id = R.drawable.ic_settings),
                 contentDescription = strings.tabSettings,
-                tint = Color.White,
+                tint = palette.textPrimary,
                 modifier = Modifier.size(18.dp),
               )
             }
@@ -334,11 +345,11 @@ fun MyProfileScreen(
           // 18+ Content Safety & Maturity Filter Card
           Surface(
             shape = RoundedCornerShape(16.dp),
-            color = DarkSurfaceVariant.copy(alpha = 0.85f),
+            color = palette.surfaceVariant.copy(alpha = 0.85f),
             border =
               BorderStroke(
                 1.dp,
-                if (allowAdultContent) NeonPink.copy(alpha = 0.65f) else NeonVioletGlow.copy(alpha = 0.35f),
+                if (allowAdultContent) NeonPink.copy(alpha = 0.65f) else palette.accentViolet.copy(alpha = 0.35f),
               ),
             modifier = Modifier.fillMaxWidth(),
           ) {
@@ -349,7 +360,7 @@ fun MyProfileScreen(
               Icon(
                 painter = painterResource(id = R.drawable.ic_shield),
                 contentDescription = null,
-                tint = if (allowAdultContent) NeonPink else CrownGold,
+                tint = if (allowAdultContent) NeonPink else palette.accentGold,
                 modifier = Modifier.size(20.dp),
               )
               Spacer(modifier = Modifier.width(10.dp))
@@ -358,7 +369,7 @@ fun MyProfileScreen(
                   text = strings.adultContentTitle,
                   style = MaterialTheme.typography.titleSmall,
                   fontWeight = FontWeight.Bold,
-                  color = Color.White,
+                  color = palette.textPrimary,
                 )
                 Text(
                   text =
@@ -368,7 +379,7 @@ fun MyProfileScreen(
                       strings.adultContentSubtitleOff
                     },
                   style = MaterialTheme.typography.labelSmall,
-                  color = Color(0xFFD2C4EB),
+                  color = palette.textSecondary,
                 )
               }
               Switch(
@@ -384,8 +395,8 @@ fun MyProfileScreen(
                   SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = NeonPink,
-                    uncheckedThumbColor = CrownGold,
-                    uncheckedTrackColor = DarkSurface,
+                    uncheckedThumbColor = palette.accentGold,
+                    uncheckedTrackColor = palette.surface,
                   ),
                 modifier = Modifier.testTag("profile_adult_content_switch"),
               )
@@ -397,7 +408,7 @@ fun MyProfileScreen(
           OutlinedButton(
             onClick = onSignOut,
             shape = RoundedCornerShape(14.dp),
-            border = BorderStroke(1.dp, NeonPink.copy(alpha = 0.55f)),
+            border = BorderStroke(1.dp, NeonPink.copy(alpha = 0.6f)),
             modifier =
               Modifier.fillMaxWidth()
                 .minimumInteractiveComponentSize()
@@ -405,7 +416,7 @@ fun MyProfileScreen(
           ) {
             Text(
               text = strings.signOut,
-              color = Color(0xFFFFB6CE),
+              color = if (palette.isDark) Color(0xFFFFB6CE) else NeonPink,
               fontWeight = FontWeight.SemiBold,
             )
           }
@@ -423,7 +434,7 @@ fun MyProfileScreen(
           text = "${strings.recentChatsTitle} (${uiState.chats.size})",
           style = MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
-          color = Color.White,
+          color = palette.textPrimary,
         )
       }
     }
@@ -432,14 +443,14 @@ fun MyProfileScreen(
       item {
         Surface(
           shape = RoundedCornerShape(18.dp),
-          color = DarkSurface.copy(alpha = 0.72f),
-          border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.25f)),
+          color = palette.surface.copy(alpha = 0.85f),
+          border = BorderStroke(1.dp, palette.accentViolet.copy(alpha = 0.25f)),
           modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         ) {
           Text(
             text = strings.noPrivateChatsYet,
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFFD2C4EB),
+            color = palette.textSecondary,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(18.dp),
           )
@@ -495,21 +506,22 @@ fun AgeConfirmationDialog(
   onDismiss: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   AlertDialog(
     onDismissRequest = onDismiss,
-    containerColor = DarkSurface,
+    containerColor = palette.surface,
     shape = RoundedCornerShape(24.dp),
     title = {
       Text(
         text = strings.ageConfirmTitle,
-        color = Color.White,
+        color = palette.textPrimary,
         fontWeight = FontWeight.Bold,
       )
     },
     text = {
       Text(
         text = strings.ageConfirmBody,
-        color = Color(0xFFD2C4EB),
+        color = palette.textSecondary,
         style = MaterialTheme.typography.bodyMedium,
       )
     },
@@ -527,7 +539,7 @@ fun AgeConfirmationDialog(
         onClick = onDismiss,
         modifier = Modifier.minimumInteractiveComponentSize().testTag("confirm_18_plus_no"),
       ) {
-        Text(strings.ageConfirmNo, color = CrownGold)
+        Text(strings.ageConfirmNo, color = palette.accentGold)
       }
     },
   )
@@ -535,17 +547,18 @@ fun AgeConfirmationDialog(
 
 @Composable
 private fun LiveStatPill(label: String, count: Long) {
+  val palette = LocalShayariColors.current
   Column(horizontalAlignment = Alignment.CenterHorizontally) {
     Text(
       text = count.toString(),
       style = MaterialTheme.typography.titleLarge,
       fontWeight = FontWeight.ExtraBold,
-      color = CrownGold,
+      color = palette.accentGold,
     )
     Text(
       text = label,
       style = MaterialTheme.typography.labelSmall,
-      color = Color(0xFFD2C4EB),
+      color = palette.textSecondary,
     )
   }
 }
@@ -566,6 +579,7 @@ private fun EditProfileDialog(
   onSave: (name: String, handle: String, city: String, address: String, bio: String) -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   var name by remember { mutableStateOf(initialName) }
   var handle by remember { mutableStateOf(initialHandle.removePrefix("@")) }
   var city by remember { mutableStateOf(initialCity) }
@@ -574,12 +588,12 @@ private fun EditProfileDialog(
 
   AlertDialog(
     onDismissRequest = { if (!isBusy) onDismiss() },
-    containerColor = DarkSurface,
+    containerColor = palette.surface,
     shape = RoundedCornerShape(24.dp),
     title = {
       Text(
         text = strings.editMyProfileTitle,
-        color = Color.White,
+        color = palette.textPrimary,
         fontWeight = FontWeight.Bold,
       )
     },
@@ -604,13 +618,13 @@ private fun EditProfileDialog(
               onClick = onPickGalleryPhoto,
               enabled = !isUploadingAvatar && !isBusy,
               shape = RoundedCornerShape(12.dp),
-              border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.65f)),
+              border = BorderStroke(1.dp, palette.accentGold.copy(alpha = 0.65f)),
               modifier = Modifier.minimumInteractiveComponentSize().testTag("dialog_pick_photo_button"),
             ) {
               Text(
                 text =
                   if (isUploadingAvatar) strings.uploadingPhoto else strings.changePhotoGallery,
-                color = CrownGold,
+                color = palette.accentGold,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
               )
@@ -623,7 +637,7 @@ private fun EditProfileDialog(
               ) {
                 Text(
                   text = strings.removePhoto,
-                  color = Color(0xFFFFB6CE),
+                  color = if (palette.isDark) Color(0xFFFFB6CE) else NeonPink,
                   style = MaterialTheme.typography.labelSmall,
                 )
               }
@@ -646,10 +660,10 @@ private fun EditProfileDialog(
             if (sanitized.length <= 24) handle = sanitized
           },
           singleLine = true,
-          prefix = { Text("@", color = CrownGold, fontWeight = FontWeight.Bold) },
+          prefix = { Text("@", color = palette.accentGold, fontWeight = FontWeight.Bold) },
           label = { Text(strings.handleLabel) },
           supportingText = {
-            Text(strings.handleHelper, color = Color(0xFFBBAAD9), fontSize = 11.sp)
+            Text(strings.handleHelper, color = palette.textMuted, fontSize = 11.sp)
           },
           colors = profileFieldColors(),
           modifier = Modifier.fillMaxWidth().testTag("edit_handle_input"),
@@ -683,8 +697,8 @@ private fun EditProfileDialog(
     },
     confirmButton = {
       Button(
-        onClick = { onSave(name, handle, city, address, bio) },
-        enabled = !isBusy && name.isNotBlank() && handle.length >= 3,
+        onClick = { onSave(name.trim(), handle.trim(), city.trim(), address.trim(), bio.trim()) },
+        enabled = !isBusy && name.isNotBlank() && handle.trim().length >= 3,
         colors = ButtonDefaults.buttonColors(containerColor = BadgePink),
         modifier = Modifier.minimumInteractiveComponentSize().testTag("save_profile_button"),
       ) {
@@ -693,7 +707,7 @@ private fun EditProfileDialog(
     },
     dismissButton = {
       TextButton(onClick = onDismiss, enabled = !isBusy) {
-        Text(strings.cancelLabel, color = Color(0xFFD2C4EB))
+        Text(strings.cancelLabel, color = palette.textSecondary)
       }
     },
   )
@@ -701,11 +715,13 @@ private fun EditProfileDialog(
 
 @Composable
 private fun profileFieldColors() =
-  OutlinedTextFieldDefaults.colors(
-    focusedBorderColor = CrownGold,
-    unfocusedBorderColor = NeonVioletGlow.copy(alpha = 0.5f),
-    focusedTextColor = Color.White,
-    unfocusedTextColor = Color.White,
-    focusedLabelColor = CrownGold,
-    unfocusedLabelColor = Color(0xFFD2C4EB),
-  )
+  LocalShayariColors.current.let { palette ->
+    OutlinedTextFieldDefaults.colors(
+      focusedBorderColor = palette.accentGold,
+      unfocusedBorderColor = palette.outline.copy(alpha = 0.7f),
+      focusedTextColor = palette.textPrimary,
+      unfocusedTextColor = palette.textPrimary,
+      focusedLabelColor = palette.accentGold,
+      unfocusedLabelColor = palette.textSecondary,
+    )
+  }

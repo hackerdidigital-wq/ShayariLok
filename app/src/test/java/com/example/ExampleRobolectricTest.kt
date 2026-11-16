@@ -574,4 +574,105 @@ class ExampleRobolectricTest {
     assertTrue(dataUri.startsWith("data:image/jpeg;base64,"))
     assertTrue(dataUri.length <= 165_000)
   }
+
+  @Test
+  fun `buildHandleFromEmail generates deterministic email-derived @SL_XXXX ID`() {
+    val a1 = com.example.data.SocialRepository.buildHandleFromEmail("Aarav.Shayar@gmail.com", "uid_1")
+    val a2 = com.example.data.SocialRepository.buildHandleFromEmail("  aarav.shayar@gmail.com ", "uid_2")
+    val b = com.example.data.SocialRepository.buildHandleFromEmail("priya.verse@gmail.com", "uid_3")
+
+    assertTrue(a1.matches(Regex("^@SL_\\d{4}$")))
+    assertEquals(a1, a2)
+    assertTrue(b.matches(Regex("^@SL_\\d{4}$")))
+    assertFalse(a1 == b)
+  }
+
+  @Test
+  fun `ShayariConfig parses and serializes FAQs, app_logo_url, Privacy Policy, and full AdMob fields`() {
+    val rawJson =
+      """
+      {
+        "app_name": "Shayari Lok",
+        "app_logo_url": "https://cdn.example.com/logo.png",
+        "latest_version_code": 3,
+        "maintenance_mode": false,
+        "privacy_policy_url": "https://example.com/privacy",
+        "privacy_policy_title": "Privacy Charter",
+        "privacy_policy_text": "Your poems & chats belong only to you.",
+        "privacy_policy_sections": [
+          { "number": "01", "title": "Account Data", "body": "Secured via Google Sign-In." }
+        ],
+        "ads_enabled": true,
+        "admob_app_id": "ca-app-pub-3940256099942544~3347511713",
+        "banner_ad_id": "ca-app-pub-3940256099942544/6300978111",
+        "interstitial_ad_id": "ca-app-pub-3940256099942544/1033173712",
+        "native_ad_id": "ca-app-pub-3940256099942544/2247696110",
+        "faqs": [
+          { "id": "faq_1", "category": "Account", "question": "How are handles created?", "answer": "From your email automatically." }
+        ]
+      }
+      """.trimIndent()
+
+    val parsed = ShayariConfig.fromJson(rawJson)
+    assertEquals("https://cdn.example.com/logo.png", parsed.appLogoUrl)
+    assertEquals("Privacy Charter", parsed.privacyPolicyTitle)
+    assertEquals("Your poems & chats belong only to you.", parsed.privacyPolicyText)
+    assertEquals(1, parsed.privacyPolicySections.size)
+    assertEquals("ca-app-pub-3940256099942544~3347511713", parsed.admobAppId)
+    assertEquals("ca-app-pub-3940256099942544/6300978111", parsed.bannerAdId)
+    assertEquals("ca-app-pub-3940256099942544/1033173712", parsed.interstitialAdId)
+    assertEquals("ca-app-pub-3940256099942544/2247696110", parsed.nativeAdId)
+    assertEquals(1, parsed.faqs.size)
+    assertEquals("faq_1", parsed.faqs.first().id)
+
+    val roundTrip = ShayariConfig.fromJson(parsed.toJson())
+    assertEquals(parsed.appLogoUrl, roundTrip.appLogoUrl)
+    assertEquals(parsed.privacyPolicyText, roundTrip.privacyPolicyText)
+    assertEquals(parsed.privacyPolicySections, roundTrip.privacyPolicySections)
+    assertEquals(parsed.admobAppId, roundTrip.admobAppId)
+    assertEquals(parsed.nativeAdId, roundTrip.nativeAdId)
+    assertEquals(parsed.faqs, roundTrip.faqs)
+  }
+
+  @Test
+  fun `ShayariViewModel toggleDarkTheme persists preference and updates uiState`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    setNetworkOffline(app)
+    val repo = ShayariRepository(app)
+    val viewModel = ShayariViewModel(app)
+
+    assertTrue(viewModel.uiState.value.isDarkTheme)
+    viewModel.toggleDarkTheme()
+    assertFalse(viewModel.uiState.value.isDarkTheme)
+    assertEquals(false, repo.getUserDarkModeOverride())
+
+    viewModel.toggleDarkTheme()
+    assertTrue(viewModel.uiState.value.isDarkTheme)
+    assertEquals(true, repo.getUserDarkModeOverride())
+  }
+
+  @Test
+  fun `ImageUploadHelper processPickedAvatarUri reads local image file URI into JPEG Data URI`() =
+    runTest {
+      val app = ApplicationProvider.getApplicationContext<Application>()
+      val tempFile = java.io.File(app.cacheDir, "test_avatar_pick.png")
+      val bmp =
+        android.graphics.Bitmap.createBitmap(
+          320,
+          320,
+          android.graphics.Bitmap.Config.ARGB_8888,
+        )
+      bmp.eraseColor(android.graphics.Color.CYAN)
+      tempFile.outputStream().use { out ->
+        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+      }
+      val fileUri = android.net.Uri.fromFile(tempFile)
+      val result = com.example.data.ImageUploadHelper.processPickedAvatarUri(app, fileUri)
+      tempFile.delete()
+
+      assertTrue("Expected processPickedAvatarUri to succeed, got: ${result.exceptionOrNull()}", result.isSuccess)
+      val dataUri = result.getOrThrow()
+      assertTrue(dataUri.startsWith("data:image/jpeg;base64,"))
+      assertTrue(dataUri.length <= 165_000)
+    }
 }

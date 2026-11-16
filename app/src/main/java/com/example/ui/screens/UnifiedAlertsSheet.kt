@@ -70,10 +70,7 @@ import com.example.ui.theme.BadgeBlue
 import com.example.ui.theme.BadgePink
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.CrownGold
-import com.example.ui.theme.DarkSurface
-import com.example.ui.theme.DarkSurfaceVariant
-import com.example.ui.theme.DeepRoyalPurple
-import com.example.ui.theme.MidnightIndigo
+import com.example.ui.theme.LocalShayariColors
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
 import com.example.ui.theme.NeonVioletGlow
@@ -95,6 +92,7 @@ fun UnifiedAlertsSheet(
   onDismiss: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
+  val palette = LocalShayariColors.current
   var isVisible by remember { mutableStateOf(false) }
   var selectedFilter by remember { mutableStateOf(AlertFilter.ALL) }
 
@@ -117,7 +115,7 @@ fun UnifiedAlertsSheet(
         Modifier.fillMaxSize()
           .background(
             Brush.verticalGradient(
-              colors = listOf(DeepRoyalPurple, MidnightIndigo, Color(0xFF100520))
+              colors = listOf(palette.bgTop, palette.bgMid, palette.bgBottom)
             )
           )
     ) {
@@ -125,7 +123,7 @@ fun UnifiedAlertsSheet(
         drawCircle(
           brush =
             Brush.radialGradient(
-              colors = listOf(NeonPink.copy(alpha = 0.16f), Color.Transparent),
+              colors = listOf(NeonPink.copy(alpha = if (palette.isDark) 0.16f else 0.09f), Color.Transparent),
               center = Offset(size.width * 0.86f, size.height * 0.14f),
               radius = size.minDimension * 0.55f,
             ),
@@ -135,7 +133,7 @@ fun UnifiedAlertsSheet(
         drawCircle(
           brush =
             Brush.radialGradient(
-              colors = listOf(NeonPurple.copy(alpha = 0.24f), Color.Transparent),
+              colors = listOf(NeonPurple.copy(alpha = if (palette.isDark) 0.24f else 0.10f), Color.Transparent),
               center = Offset(size.width * 0.14f, size.height * 0.82f),
               radius = size.minDimension * 0.65f,
             ),
@@ -179,15 +177,15 @@ fun UnifiedAlertsSheet(
             ) {
               Surface(
                 shape = CircleShape,
-                color = BadgePurple.copy(alpha = 0.45f),
-                border = BorderStroke(1.2.dp, CrownGold.copy(alpha = 0.65f)),
+                color = palette.accentPurple.copy(alpha = 0.20f),
+                border = BorderStroke(1.2.dp, palette.accentGold.copy(alpha = 0.65f)),
                 modifier = Modifier.size(44.dp),
               ) {
                 Box(contentAlignment = Alignment.Center) {
                   Icon(
                     painter = painterResource(id = R.drawable.ic_notification),
                     contentDescription = null,
-                    tint = CrownGold,
+                    tint = palette.accentGold,
                     modifier = Modifier.size(22.dp),
                   )
                 }
@@ -198,7 +196,7 @@ fun UnifiedAlertsSheet(
                   text = strings.liveAlertsTitle,
                   style = MaterialTheme.typography.titleLarge,
                   fontWeight = FontWeight.ExtraBold,
-                  color = Color.White,
+                  color = palette.textPrimary,
                   maxLines = 1,
                   overflow = TextOverflow.Ellipsis,
                 )
@@ -211,7 +209,7 @@ fun UnifiedAlertsSheet(
                       "$totalAlertsCount ${strings.notificationsTitle}"
                     },
                   style = MaterialTheme.typography.labelMedium,
-                  color = Color(0xFFD2C4EB),
+                  color = palette.textSecondary,
                 )
               }
             }
@@ -226,15 +224,15 @@ fun UnifiedAlertsSheet(
                 ) {
                   Text(
                     text = strings.markRead,
-                    color = CrownGold,
+                    color = palette.accentGold,
                     fontWeight = FontWeight.Bold,
                   )
                 }
               }
               Surface(
                 shape = CircleShape,
-                color = DarkSurfaceVariant.copy(alpha = 0.9f),
-                border = BorderStroke(1.dp, NeonVioletGlow.copy(alpha = 0.45f)),
+                color = palette.pillSurface,
+                border = BorderStroke(1.dp, palette.outline),
                 modifier =
                   Modifier.minimumInteractiveComponentSize()
                     .size(42.dp)
@@ -246,7 +244,7 @@ fun UnifiedAlertsSheet(
                   Icon(
                     painter = painterResource(id = R.drawable.ic_close),
                     contentDescription = stringResource(R.string.cd_back),
-                    tint = Color.White,
+                    tint = palette.textPrimary,
                     modifier = Modifier.size(20.dp),
                   )
                 }
@@ -264,7 +262,7 @@ fun UnifiedAlertsSheet(
               AlertFilterChip(
                 label = strings.categoryLabel("All"),
                 count = socialState.socialNotifications.size + adminNotifications.size,
-                accentColor = CrownGold,
+                accentColor = palette.accentGold,
                 selected = selectedFilter == AlertFilter.ALL,
                 onClick = { selectedFilter = AlertFilter.ALL },
               )
@@ -309,7 +307,7 @@ fun UnifiedAlertsSheet(
 
           Spacer(modifier = Modifier.height(6.dp))
           HorizontalDivider(
-            color = NeonVioletGlow.copy(alpha = 0.2f),
+            color = palette.outline.copy(alpha = 0.45f),
             modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
           )
 
@@ -339,15 +337,15 @@ fun UnifiedAlertsSheet(
               ) {
                 Surface(
                   shape = CircleShape,
-                  color = NeonPurple.copy(alpha = 0.25f),
-                  border = BorderStroke(1.2.dp, CrownGold.copy(alpha = 0.45f)),
+                  color = palette.accentPurple.copy(alpha = 0.20f),
+                  border = BorderStroke(1.2.dp, palette.accentGold.copy(alpha = 0.45f)),
                   modifier = Modifier.size(76.dp),
                 ) {
                   Box(contentAlignment = Alignment.Center) {
                     Icon(
                       painter = painterResource(id = R.drawable.ic_notification),
                       contentDescription = null,
-                      tint = CrownGold,
+                      tint = palette.accentGold,
                       modifier = Modifier.size(34.dp),
                     )
                   }
@@ -357,14 +355,14 @@ fun UnifiedAlertsSheet(
                   text = strings.emptyAlertsTitle,
                   style = MaterialTheme.typography.titleLarge,
                   fontWeight = FontWeight.Bold,
-                  color = Color.White,
+                  color = palette.textPrimary,
                   textAlign = TextAlign.Center,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                   text = strings.allCaughtUpAlerts,
                   style = MaterialTheme.typography.bodyMedium,
-                  color = Color(0xFFD2C4EB),
+                  color = palette.textSecondary,
                   textAlign = TextAlign.Center,
                 )
               }
@@ -380,7 +378,7 @@ fun UnifiedAlertsSheet(
                   Text(
                     text = strings.friendsFollowersMessages,
                     style = MaterialTheme.typography.labelLarge,
-                    color = CrownGold,
+                    color = palette.accentGold,
                     fontWeight = FontWeight.Bold,
                   )
                 }
@@ -397,7 +395,7 @@ fun UnifiedAlertsSheet(
                   Text(
                     text = strings.officialAnnouncements,
                     style = MaterialTheme.typography.labelLarge,
-                    color = CrownGold,
+                    color = palette.accentGold,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(top = if (filteredSocial.isNotEmpty()) 8.dp else 0.dp),
                   )
@@ -422,13 +420,14 @@ private fun AlertFilterChip(
   selected: Boolean,
   onClick: () -> Unit,
 ) {
+  val palette = LocalShayariColors.current
   Surface(
     shape = RoundedCornerShape(50),
-    color = if (selected) accentColor.copy(alpha = 0.28f) else DarkSurfaceVariant.copy(alpha = 0.72f),
+    color = if (selected) accentColor.copy(alpha = if (palette.isDark) 0.28f else 0.16f) else palette.surfaceVariant,
     border =
       BorderStroke(
         width = if (selected) 1.3.dp else 0.9.dp,
-        color = if (selected) accentColor else NeonVioletGlow.copy(alpha = 0.30f),
+        color = if (selected) accentColor else palette.outline,
       ),
     modifier =
       Modifier.clip(RoundedCornerShape(50))
@@ -444,13 +443,13 @@ private fun AlertFilterChip(
         text = label,
         style = MaterialTheme.typography.labelLarge,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-        color = Color.White,
+        color = palette.textPrimary,
         maxLines = 1,
       )
       if (count > 0) {
         Surface(
           shape = CircleShape,
-          color = accentColor.copy(alpha = 0.85f),
+          color = accentColor.copy(alpha = 0.88f),
         ) {
           Text(
             text = count.toString(),
@@ -470,6 +469,7 @@ private fun SocialAlertItemCard(
   notif: SocialNotification,
   onClick: () -> Unit,
 ) {
+  val palette = LocalShayariColors.current
   val iconRes =
     when (notif.type) {
       "message" -> R.drawable.ic_chat
@@ -485,11 +485,11 @@ private fun SocialAlertItemCard(
 
   Surface(
     shape = RoundedCornerShape(18.dp),
-    color = if (!notif.isRead) DarkSurfaceVariant else DarkSurface.copy(alpha = 0.80f),
+    color = if (!notif.isRead) palette.surfaceVariant else palette.surface.copy(alpha = 0.92f),
     border =
       BorderStroke(
         1.dp,
-        if (!notif.isRead) CrownGold.copy(alpha = 0.6f) else NeonVioletGlow.copy(alpha = 0.25f),
+        if (!notif.isRead) palette.accentGold.copy(alpha = 0.6f) else palette.outline.copy(alpha = 0.5f),
       ),
     tonalElevation = if (!notif.isRead) 4.dp else 1.dp,
     modifier =
@@ -521,7 +521,7 @@ private fun SocialAlertItemCard(
             text = notif.senderName.ifBlank { "Shayari Lok" },
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = palette.textPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
@@ -530,7 +530,7 @@ private fun SocialAlertItemCard(
             Text(
               text = notif.senderHandle,
               style = MaterialTheme.typography.labelSmall,
-              color = CrownGold,
+              color = palette.accentGold,
             )
           }
         }
@@ -538,7 +538,7 @@ private fun SocialAlertItemCard(
         Text(
           text = notif.previewText,
           style = MaterialTheme.typography.bodySmall,
-          color = Color(0xFFD2C4EB),
+          color = palette.textSecondary,
           maxLines = 2,
           overflow = TextOverflow.Ellipsis,
         )
@@ -553,10 +553,11 @@ private fun SocialAlertItemCard(
 
 @Composable
 private fun AdminAnnouncementCard(item: ShayariNotification) {
+  val palette = LocalShayariColors.current
   Surface(
     shape = RoundedCornerShape(18.dp),
-    color = DarkSurfaceVariant.copy(alpha = 0.78f),
-    border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.35f)),
+    color = palette.surface.copy(alpha = 0.94f),
+    border = BorderStroke(1.dp, palette.accentGold.copy(alpha = 0.45f)),
     modifier = Modifier.fillMaxWidth().testTag("admin_notification_card_${item.id}"),
   ) {
     Column(modifier = Modifier.padding(16.dp)) {
@@ -567,12 +568,12 @@ private fun AdminAnnouncementCard(item: ShayariNotification) {
       ) {
         Surface(
           shape = RoundedCornerShape(50),
-          color = CrownGold.copy(alpha = 0.18f),
+          color = palette.accentGold.copy(alpha = 0.16f),
         ) {
           Text(
             text = item.badge,
             style = MaterialTheme.typography.labelSmall,
-            color = CrownGold,
+            color = palette.accentGold,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
           )
@@ -580,7 +581,7 @@ private fun AdminAnnouncementCard(item: ShayariNotification) {
         Text(
           text = item.timeLabel,
           style = MaterialTheme.typography.labelSmall,
-          color = Color(0xFFD2C4EB),
+          color = palette.textSecondary,
         )
       }
       Spacer(modifier = Modifier.height(8.dp))
@@ -588,14 +589,14 @@ private fun AdminAnnouncementCard(item: ShayariNotification) {
         text = item.title,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
-        color = Color.White,
+        color = palette.textPrimary,
       )
       if (item.message.isNotBlank()) {
         Spacer(modifier = Modifier.height(4.dp))
         Text(
           text = item.message,
           style = MaterialTheme.typography.bodySmall,
-          color = Color(0xFFD2C4EB),
+          color = palette.textSecondary,
         )
       }
     }

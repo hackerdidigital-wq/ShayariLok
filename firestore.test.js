@@ -152,3 +152,36 @@ test("Private 1-on-1 chat: participants can create room+message in batch & read;
     })
   );
 });
+
+test("Authenticated user: lowercase /appusers counters allow social increments while blocking profile hijacks, and appConfig/main is readable", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore(DATABASE_ID);
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore(DATABASE_ID);
+
+  await assertSucceeds(
+    aliceDb.collection("appusers").doc(ALICE_UID).set({
+      uid: ALICE_UID,
+      displayName: "Alice Shayar",
+      handle: "@SL_1111",
+      bio: "Dil ki duniya",
+      city: "Jaipur",
+      address: "MI Road",
+      followersCount: 0,
+      likesReceivedCount: 0,
+    })
+  );
+
+  // Bob can read Alice's profile & increment social counters on /appusers/{uid}, but cannot overwrite her bio/name
+  await assertSucceeds(bobDb.collection("appusers").limit(20).get());
+  await assertSucceeds(
+    bobDb.collection("appusers").doc(ALICE_UID).update({ likesReceivedCount: 1 })
+  );
+  await assertFails(
+    bobDb.collection("appusers").doc(ALICE_UID).update({ bio: "Tampered bio" })
+  );
+
+  // Clients can read live admin settings in appConfig/main, cannot write them
+  await assertSucceeds(bobDb.collection("appConfig").doc("main").get());
+  await assertFails(
+    bobDb.collection("appConfig").doc("main").set({ ads_enabled: false })
+  );
+});

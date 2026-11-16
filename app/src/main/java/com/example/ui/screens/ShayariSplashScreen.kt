@@ -51,7 +51,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
 import com.example.R
+import com.example.data.rememberShayariImageBitmap
 import com.example.ui.theme.CrownGold
 import com.example.ui.theme.DeepRoyalPurple
 import com.example.ui.theme.HeaderPurpleEnd
@@ -67,8 +69,10 @@ import kotlin.math.sin
 @Composable
 fun ShayariSplashScreen(
   appName: String,
+  appLogoUrl: String = "",
   modifier: Modifier = Modifier,
 ) {
+  val customLogoBitmap = rememberShayariImageBitmap(appLogoUrl)
   val infiniteTransition = rememberInfiniteTransition(label = "splashVfx")
 
   val pulseScale by
@@ -210,11 +214,20 @@ fun ShayariSplashScreen(
               ),
         ) {
           Box(contentAlignment = Alignment.Center) {
-            Image(
-              painter = painterResource(id = R.drawable.ic_crown),
-              contentDescription = appName,
-              modifier = Modifier.size(50.dp),
-            )
+            if (customLogoBitmap != null) {
+              Image(
+                bitmap = customLogoBitmap,
+                contentDescription = appName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+              )
+            } else {
+              Image(
+                painter = painterResource(id = R.drawable.ic_crown),
+                contentDescription = appName,
+                modifier = Modifier.size(50.dp),
+              )
+            }
           }
         }
       }
