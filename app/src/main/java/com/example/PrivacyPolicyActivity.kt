@@ -6,7 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,39 +35,58 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.example.data.ShayariRepository
+import com.example.model.SupportedLanguage
+import com.example.ui.i18n.LocalAppStrings
+import com.example.ui.i18n.appStringsFor
 import com.example.ui.theme.DarkBackgroundBottom
-import com.example.ui.theme.LightBackgroundBottom
 import com.example.ui.theme.ShayariLokTheme
 
 class PrivacyPolicyActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    val repository = ShayariRepository(this)
     setContent {
-      ShayariLokTheme {
-        PrivacyPolicyScreen(onBack = { finish() })
+      val langCode = remember { repository.getSelectedLanguageCode() }
+      val cachedConfig = remember { repository.loadCachedConfig() }
+      val isRtl =
+        remember(langCode, cachedConfig) {
+          cachedConfig.supportedLanguages.firstOrNull {
+            it.code.equals(langCode, ignoreCase = true)
+          }?.isRtl ?: (langCode.lowercase() in SupportedLanguage.RTL_LANGUAGE_CODES)
+        }
+      val strings = remember(langCode) { appStringsFor(langCode) }
+      val layoutDir = if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+
+      ShayariLokTheme(dynamicTheme = cachedConfig.dynamicTheme) {
+        CompositionLocalProvider(
+          LocalAppStrings provides strings,
+          LocalLayoutDirection provides layoutDir,
+        ) {
+          PrivacyPolicyScreen(onBack = { finish() })
+        }
       }
     }
   }
 }
 
-private data class PolicySection(
-  val number: String,
-  val title: String,
-  val body: String,
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PrivacyPolicyScreen(onBack: () -> Unit) {
+  val strings = LocalAppStrings.current
   val bgGradient =
     Brush.verticalGradient(
       colors =
@@ -78,40 +96,6 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
         )
     )
 
-  val sections =
-    listOf(
-      PolicySection(
-        number = "01",
-        title = "One-Tap Google Sign-In",
-        body =
-          "Shayari Lok uses Google Sign-In via Android Credential Manager so you can sync your profile, favorites, followers, and 1-on-1 chats safely without creating any separate password.",
-      ),
-      PolicySection(
-        number = "02",
-        title = "Profile, Language & Preferences",
-        body =
-          "Your Google UID, display name, email (private account record), selected language/country, and reading preferences are stored securely to keep your experience personalized across sessions.",
-      ),
-      PolicySection(
-        number = "03",
-        title = "Live Content & Community Sync",
-        body =
-          "The app uses Firebase Cloud Firestore real-time listeners and GitHub/CDN config sync to deliver fresh Shayari updates, polls, and live community chats with zero third-party ad trackers.",
-      ),
-      PolicySection(
-        number = "04",
-        title = "Clipboard, WhatsApp & Share Sheet",
-        body =
-          "When you tap Copy, WhatsApp, or Share on a Shayari card, the app interacts only with Android's Clipboard or system/WhatsApp share chooser on your explicit action.",
-      ),
-      PolicySection(
-        number = "05",
-        title = "Updates & Contact Information",
-        body =
-          "This privacy policy applies to Shayari Lok. Any updates will appear directly inside this screen alongside the current version (${BuildConfig.VERSION_NAME}).",
-      ),
-    )
-
   Scaffold(
     containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0f),
     contentWindowInsets = WindowInsets.safeDrawing,
@@ -119,7 +103,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
       TopAppBar(
         title = {
           Text(
-            text = stringResource(R.string.privacy_policy_title),
+            text = strings.privacyPolicyTitle,
             style = MaterialTheme.typography.titleLarge,
           )
         },
@@ -156,7 +140,6 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
         modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(14.dp),
       ) {
-        // Hero Summary Card
         Surface(
           shape = RoundedCornerShape(22.dp),
           color = MaterialTheme.colorScheme.primaryContainer,
@@ -190,13 +173,13 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
               )
               Spacer(modifier = Modifier.height(2.dp))
               Text(
-                text = "Privacy-First Google Sign-In & Cloud Sync",
+                text = strings.privacyHeroSubtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
               )
               Spacer(modifier = Modifier.height(4.dp))
               Text(
-                text = "Version ${BuildConfig.VERSION_NAME}",
+                text = "${strings.versionLabel} ${BuildConfig.VERSION_NAME}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
               )
@@ -204,7 +187,7 @@ private fun PrivacyPolicyScreen(onBack: () -> Unit) {
           }
         }
 
-        sections.forEach { section ->
+        strings.privacySections.forEach { section ->
           Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface,

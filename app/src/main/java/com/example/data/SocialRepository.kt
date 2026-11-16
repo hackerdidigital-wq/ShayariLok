@@ -12,14 +12,18 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 
@@ -59,7 +63,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
     val path = "appUsers"
     emitAll(
       db.collection(path)
-        .limit(100)
+        .limit(200)
         .snapshots()
         .map { snapshot ->
           snapshot.documents
@@ -72,6 +76,86 @@ class SocialRepository(private val db: FirebaseFirestore) {
           throw cause
         }
     )
+  }
+
+  suspend fun searchDiscoverableProfiles(rawQuery: String): Result<List<PublicProfile>> {
+    val uid =
+      try {
+        requireUserId()
+      } catch (e: Exception) {
+        return Result.failure(e)
+      }
+    val q = rawQuery.trim()
+    if (q.length < 2) return Result.success(emptyList())
+    val stripped = q.removePrefix("@").trim()
+    val handleWithAt = if (stripped.isBlank()) "" else "@$stripped"
+    val resultsByUid = linkedMapOf<String, PublicProfile>()
+
+    fun collectDocs(docs: List<DocumentSnapshot>) {
+      docs.mapNotNull { it.toPublicProfile() }.forEach { profile ->
+        if (profile.effectiveUid.isNotBlank() && profile.effectiveUid != uid) {
+          resultsByUid.putIfAbsent(profile.effectiveUid, profile)
+        }
+      }
+    }
+
+    return try {
+      val appUsers = db.collection("appUsers")
+      if (handleWithAt.isNotBlank()) {
+        runCatching { appUsers.whereEqualTo("handle", handleWithAt).limit(10).get().await() }
+          .onSuccess { collectDocs(it.documents) }
+        runCatching { appUsers.whereEqualTo("handleLower", handleWithAt.lowercase()).limit(10).get().await() }
+          .onSuccess { collectDocs(it.documents) }
+        runCatching { appUsers.whereEqualTo("username", stripped).limit(10).get().await() }
+          .onSuccess { collectDocs(it.documents) }
+        runCatching { appUsers.whereEqualTo("username", stripped.uppercase()).limit(10).get().await() }
+          .onSuccess { collectDocs(it.documents) }
+      }
+      runCatching {
+        appUsers
+          .orderBy("displayNameLower")
+          .startAt(q.lowercase())
+          .endAt("${q.lowercase()}\uf8ff")
+          .limit(25)
+          .get()
+          .await()
+      }.onSuccess { collectDocs(it.documents) }
+
+      runCatching {
+        appUsers
+          .orderBy("displayName")
+          .startAt(q)
+          .endAt("${q}\uf8ff")
+          .limit(25)
+          .get()
+          .await()
+      }.onSuccess { collectDocs(it.documents) }
+
+      // Scan discoverable appUsers directory locally if prefix indexes haven't matched
+      if (resultsByUid.isEmpty()) {
+        runCatching {
+          appUsers.limit(120).get().await()
+        }.onSuccess { snap ->
+          collectDocs(
+            snap.documents.filter { doc ->
+              val prof = doc.toPublicProfile() ?: return@filter false
+              prof.matchesQuery(q)
+            }
+          )
+        }.onFailure { err ->
+          if (err !is CancellationException) {
+            handleFirestoreError(err, OperationType.LIST, "appUsers")
+          }
+        }
+      }
+
+      Result.success(resultsByUid.values.toList())
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.LIST, "appUsers")
+      Result.failure(e)
+    }
   }
 
   fun observeMyFollowingIds(selfUid: String): Flow<Set<String>> = flow {
@@ -128,23 +212,48 @@ class SocialRepository(private val db: FirebaseFirestore) {
     )
   }
 
+  @OptIn(ExperimentalCoroutinesApi::class)
   fun observeChatMessages(chatId: String): Flow<List<ChatMessage>> = flow {
-    requireUserId()
-    val path = "chatRooms/$chatId/messages"
+    val selfUid = requireUserId()
+    val roomRef = db.collection("chatRooms").document(chatId)
     emitAll(
-      db.collection("chatRooms")
-        .document(chatId)
-        .collection("messages")
-        .orderBy("createdAt", Query.Direction.ASCENDING)
-        .limit(150)
+      roomRef
         .snapshots()
-        .map { snapshot ->
-          snapshot.documents.mapNotNull { it.toChatMessage(chatId) }
-        }
         .catch { cause ->
           if (cause is CancellationException) throw cause
-          handleFirestoreError(cause, OperationType.LIST, path)
+          handleFirestoreError(cause, OperationType.GET, roomRef.path)
           throw cause
+        }
+        .flatMapLatest { roomSnap ->
+          if (!roomSnap.exists()) {
+            flowOf(emptyList())
+          } else {
+            val participants =
+              (roomSnap.get("participantIds") as? List<*>)?.mapNotNull { it as? String }.orEmpty()
+            if (participants.isNotEmpty() && selfUid !in participants) {
+              throw SecurityException("Access denied: you are not a participant of this private chat.")
+            }
+            val path = "chatRooms/$chatId/messages"
+            roomRef
+              .collection("messages")
+              .orderBy("createdAt", Query.Direction.ASCENDING)
+              .limit(150)
+              .snapshots()
+              .map { snapshot ->
+                snapshot.documents
+                  .mapNotNull { it.toChatMessage(chatId) }
+                  .filter { msg ->
+                    msg.senderId == selfUid ||
+                      msg.effectiveRecipientId == selfUid ||
+                      selfUid in msg.participantIds
+                  }
+              }
+              .catch { cause ->
+                if (cause is CancellationException) throw cause
+                handleFirestoreError(cause, OperationType.LIST, path)
+                throw cause
+              }
+          }
         }
     )
   }
@@ -187,20 +296,37 @@ class SocialRepository(private val db: FirebaseFirestore) {
     val cleanUsername = safeHandle.removePrefix("@").ifBlank { "SL_${uid.takeLast(4).uppercase()}" }
     val safeName = defaultDisplayName.trim().ifBlank { "Shayari Lover" }.take(60)
     val safeEmail = email.trim().take(160)
-    val safePhoto = photoUrl.trim().take(500)
+    val safePhoto = photoUrl.trim().take(MAX_AVATAR_URI_CHARS)
 
     val privateUserRef = db.collection("users").document(uid)
     val publicUserRef = db.collection("appUsers").document(uid)
 
     return try {
       val existingPrivate = privateUserRef.get().await()
+      val existingPrivatePhoto = existingPrivate.getString("photoUrl").orEmpty()
+      val existingPublic = publicUserRef.get().await()
+      val existingPublicPhoto = existingPublic.getString("photoUrl").orEmpty()
+      val preservedCustomPhoto =
+        when {
+          existingPublicPhoto.startsWith("data:image", ignoreCase = true) -> existingPublicPhoto
+          existingPrivatePhoto.startsWith("data:image", ignoreCase = true) -> existingPrivatePhoto
+          existingPublicPhoto.isNotBlank() && !existingPublicPhoto.contains("googleusercontent.com") -> existingPublicPhoto
+          else -> safePhoto
+        }
+
+      val existingHandle = existingPublic.getString("handle").orEmpty().ifBlank { safeHandle }
+      val existingUsername =
+        existingPublic.getString("username").orEmpty().ifBlank { existingHandle.removePrefix("@") }
+      val existingName = existingPublic.getString("displayName").orEmpty().ifBlank { safeName }
+
       val privatePayload =
         buildMap<String, Any> {
           put("uid", uid)
-          put("displayName", safeName)
+          put("displayName", existingName)
           put("email", safeEmail)
-          if (safePhoto.isNotEmpty()) put("photoUrl", safePhoto)
-          put("handle", safeHandle)
+          if (preservedCustomPhoto.isNotEmpty()) put("photoUrl", preservedCustomPhoto)
+          put("handle", existingHandle)
+          put("username", existingUsername)
           if (!existingPrivate.exists()) {
             put("createdAt", FieldValue.serverTimestamp())
           }
@@ -208,16 +334,17 @@ class SocialRepository(private val db: FirebaseFirestore) {
         }
       privateUserRef.set(privatePayload, SetOptions.merge()).await()
 
-      val existingPublic = publicUserRef.get().await()
       val publicPayload =
         if (!existingPublic.exists()) {
           buildMap<String, Any> {
             put("uid", uid)
             put("userId", uid)
             put("displayName", safeName)
+            put("displayNameLower", safeName.lowercase())
             put("username", cleanUsername)
             put("handle", safeHandle)
-            if (safePhoto.isNotEmpty()) put("photoUrl", safePhoto)
+            put("handleLower", safeHandle.lowercase())
+            if (preservedCustomPhoto.isNotEmpty()) put("photoUrl", preservedCustomPhoto)
             put("city", "")
             put("bio", "Shayari Lok Member")
             put("isOnline", true)
@@ -231,11 +358,18 @@ class SocialRepository(private val db: FirebaseFirestore) {
           }
         } else {
           buildMap<String, Any> {
-            val currentName = existingPublic.getString("displayName").orEmpty()
-            if (currentName.isBlank()) {
+            put("uid", uid)
+            put("userId", uid)
+            if (existingPublic.getString("displayName").isNullOrBlank()) {
               put("displayName", safeName)
+              put("displayNameLower", safeName.lowercase())
+            } else {
+              put("displayNameLower", existingName.lowercase())
             }
-            if (safePhoto.isNotEmpty()) put("photoUrl", safePhoto)
+            put("handleLower", existingHandle.lowercase())
+            if (existingPublicPhoto.isBlank() && preservedCustomPhoto.isNotEmpty()) {
+              put("photoUrl", preservedCustomPhoto)
+            }
             put("isOnline", true)
             put("updatedAt", FieldValue.serverTimestamp())
           }
@@ -249,10 +383,10 @@ class SocialRepository(private val db: FirebaseFirestore) {
             id = uid,
             userId = uid,
             uid = uid,
-            handle = safeHandle,
-            username = cleanUsername,
-            displayName = safeName,
-            photoUrl = safePhoto,
+            handle = existingHandle,
+            username = existingUsername,
+            displayName = existingName,
+            photoUrl = preservedCustomPhoto,
           )
       Result.success(profile)
     } catch (e: CancellationException) {
@@ -265,9 +399,11 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
   suspend fun updateMyProfile(
     displayName: String,
+    handle: String? = null,
     city: String,
     address: String,
     bio: String,
+    photoUrl: String? = null,
   ): Result<Unit> {
     val uid =
       try {
@@ -279,6 +415,96 @@ class SocialRepository(private val db: FirebaseFirestore) {
     if (cleanName.isBlank()) {
       return Result.failure(IllegalArgumentException("Name cannot be empty"))
     }
+
+    val normalizedHandlePair: Pair<String, String>? =
+      if (handle != null) {
+        val raw = handle.trim().removePrefix("@")
+        if (!HANDLE_REGEX.matches(raw)) {
+          return Result.failure(
+            IllegalArgumentException("Handle must be 3-24 characters (letters, numbers, _)")
+          )
+        }
+        "@$raw" to raw
+      } else {
+        null
+      }
+
+    val publicRef = db.collection("appUsers").document(uid)
+    val privateRef = db.collection("users").document(uid)
+
+    return try {
+      if (normalizedHandlePair != null) {
+        val (desiredHandle, _) = normalizedHandlePair
+        val conflictSnap =
+          runCatching {
+            db.collection("appUsers")
+              .whereEqualTo("handleLower", desiredHandle.lowercase())
+              .limit(5)
+              .get()
+              .await()
+          }.getOrNull()
+        val hasConflict =
+          conflictSnap?.documents?.any { doc ->
+            val ownerUid = doc.getString("uid").orEmpty().ifBlank { doc.id }
+            ownerUid != uid
+          } == true
+        if (hasConflict) {
+          return Result.failure(IllegalStateException("Handle $desiredHandle is already taken"))
+        }
+      }
+
+      val publicUpdates =
+        buildMap<String, Any> {
+          put("displayName", cleanName)
+          put("displayNameLower", cleanName.lowercase())
+          put("city", city.trim().take(80))
+          put("bio", bio.trim().take(220))
+          if (normalizedHandlePair != null) {
+            put("handle", normalizedHandlePair.first)
+            put("handleLower", normalizedHandlePair.first.lowercase())
+            put("username", normalizedHandlePair.second)
+          }
+          if (photoUrl != null) {
+            put("photoUrl", photoUrl.trim().take(MAX_AVATAR_URI_CHARS))
+          }
+          put("updatedAt", FieldValue.serverTimestamp())
+        }
+
+      val privateUpdates =
+        buildMap<String, Any> {
+          put("displayName", cleanName)
+          put("address", address.trim().take(160))
+          if (normalizedHandlePair != null) {
+            put("handle", normalizedHandlePair.first)
+            put("username", normalizedHandlePair.second)
+          }
+          if (photoUrl != null) {
+            put("photoUrl", photoUrl.trim().take(MAX_AVATAR_URI_CHARS))
+          }
+          put("updatedAt", FieldValue.serverTimestamp())
+        }
+
+      val batch = db.batch()
+      batch.set(publicRef, publicUpdates, SetOptions.merge())
+      batch.set(privateRef, privateUpdates, SetOptions.merge())
+      batch.commit().await()
+      Result.success(Unit)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.UPDATE, publicRef.path)
+      Result.failure(e)
+    }
+  }
+
+  suspend fun updateMyAvatarPhoto(dataUriOrEmpty: String): Result<Unit> {
+    val uid =
+      try {
+        requireUserId()
+      } catch (e: Exception) {
+        return Result.failure(e)
+      }
+    val safePhoto = dataUriOrEmpty.trim().take(MAX_AVATAR_URI_CHARS)
     val publicRef = db.collection("appUsers").document(uid)
     val privateRef = db.collection("users").document(uid)
 
@@ -287,9 +513,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
       batch.set(
         publicRef,
         mapOf(
-          "displayName" to cleanName,
-          "city" to city.trim().take(80),
-          "bio" to bio.trim().take(220),
+          "photoUrl" to safePhoto,
           "updatedAt" to FieldValue.serverTimestamp(),
         ),
         SetOptions.merge(),
@@ -297,8 +521,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
       batch.set(
         privateRef,
         mapOf(
-          "displayName" to cleanName,
-          "address" to address.trim().take(160),
+          "photoUrl" to safePhoto,
           "updatedAt" to FieldValue.serverTimestamp(),
         ),
         SetOptions.merge(),
@@ -495,6 +718,10 @@ class SocialRepository(private val db: FirebaseFirestore) {
       return Result.failure(IllegalArgumentException("Message cannot be empty"))
     }
     val targetUid = targetProfile.effectiveUid
+    if (targetUid.isBlank() || targetUid == uid) {
+      return Result.failure(IllegalArgumentException("Cannot send private message to this recipient"))
+    }
+    val sortedParticipants = listOf(uid, targetUid).sorted()
     val roomId = buildChatRoomId(uid, targetUid)
     val roomRef = db.collection("chatRooms").document(roomId)
     val msgRef = roomRef.collection("messages").document()
@@ -505,13 +732,18 @@ class SocialRepository(private val db: FirebaseFirestore) {
       batch.set(
         roomRef,
         mapOf(
-          "participantIds" to listOf(uid, targetUid).sorted(),
+          "participantIds" to sortedParticipants,
           "participantNames" to
             listOf(selfProfile.displayName.take(100), targetProfile.displayName.take(100)),
           "participantHandles" to
             mapOf(uid to selfProfile.effectiveHandle, targetUid to targetProfile.effectiveHandle),
           "participantDisplayNames" to
             mapOf(uid to selfProfile.displayName, targetUid to targetProfile.displayName),
+          "participantPhotos" to
+            mapOf(
+              uid to selfProfile.photoUrl.take(MAX_AVATAR_URI_CHARS),
+              targetUid to targetProfile.photoUrl.take(MAX_AVATAR_URI_CHARS),
+            ),
           "lastMessage" to cleanText.take(500),
           "lastSenderId" to uid,
           "messageCount" to FieldValue.increment(1L),
@@ -524,6 +756,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
         msgRef,
         mapOf(
           "roomId" to roomId,
+          "participantIds" to sortedParticipants,
           "senderId" to uid,
           "senderName" to selfProfile.displayName.take(100),
           "senderHandle" to selfProfile.effectiveHandle.take(40),
@@ -662,12 +895,14 @@ class SocialRepository(private val db: FirebaseFirestore) {
     val partnerId = participants.firstOrNull { it != selfUid } ?: getString("partnerId").orEmpty()
     val namesMap = (get("participantDisplayNames") as? Map<*, *>)
     val handlesMap = (get("participantHandles") as? Map<*, *>)
+    val photosMap = (get("participantPhotos") as? Map<*, *>)
     val partnerName =
       (namesMap?.get(partnerId) as? String)
         ?: getString("partnerName").orEmpty().ifBlank { "Shayar Friend" }
     val partnerHandle =
       (handlesMap?.get(partnerId) as? String)
         ?: getString("partnerHandle").orEmpty().ifBlank { "@SL_${partnerId.takeLast(4).uppercase()}" }
+    val partnerPhoto = (photosMap?.get(partnerId) as? String).orEmpty()
     val updatedTs =
       getTimestamp("updatedAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
 
@@ -677,6 +912,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
       partnerId = partnerId,
       partnerHandle = partnerHandle,
       partnerName = partnerName,
+      partnerPhotoUrl = partnerPhoto,
       lastMessage = getString("lastMessage").orEmpty(),
       lastSenderId = getString("lastSenderId").orEmpty(),
       messageCount = getLong("messageCount") ?: 0L,
@@ -691,6 +927,8 @@ class SocialRepository(private val db: FirebaseFirestore) {
     val senderId = getString("senderId").orEmpty()
     if (text.isBlank() || senderId.isBlank()) return null
     val receiverId = getString("receiverId").orEmpty().ifBlank { getString("recipientId").orEmpty() }
+    val msgParticipants =
+      (get("participantIds") as? List<*>)?.mapNotNull { it as? String }.orEmpty()
     val createdTs =
       getTimestamp("createdAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
 
@@ -698,6 +936,7 @@ class SocialRepository(private val db: FirebaseFirestore) {
       id = id,
       chatId = roomId,
       roomId = getString("roomId").orEmpty().ifBlank { roomId },
+      participantIds = msgParticipants,
       senderId = senderId,
       senderName = getString("senderName").orEmpty(),
       senderHandle = getString("senderHandle").orEmpty(),
@@ -730,6 +969,9 @@ class SocialRepository(private val db: FirebaseFirestore) {
   }
 
   companion object {
+    const val MAX_AVATAR_URI_CHARS = 250_000
+    private val HANDLE_REGEX = Regex("^[a-zA-Z0-9_]{3,24}$")
+
     fun buildChatRoomId(uidA: String, uidB: String): String =
       "room_" + listOf(uidA, uidB).sorted().joinToString("_")
 

@@ -6,7 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,16 +49,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.data.ShayariRepository
 import com.example.model.ShayariNotification
+import com.example.model.SupportedLanguage
+import com.example.ui.i18n.LocalAppStrings
+import com.example.ui.i18n.appStringsFor
 import com.example.ui.theme.DarkBackgroundBottom
-import com.example.ui.theme.LightBackgroundBottom
 import com.example.ui.theme.ShayariLokTheme
 import kotlinx.coroutines.launch
 
@@ -68,11 +72,27 @@ class NotificationsActivity : ComponentActivity() {
     enableEdgeToEdge()
     val repository = ShayariRepository(this)
     setContent {
-      ShayariLokTheme {
-        NotificationsContent(
-          repository = repository,
-          onBack = { finish() },
-        )
+      val langCode = remember { repository.getSelectedLanguageCode() }
+      val cachedConfig = remember { repository.loadCachedConfig() }
+      val isRtl =
+        remember(langCode, cachedConfig) {
+          cachedConfig.supportedLanguages.firstOrNull {
+            it.code.equals(langCode, ignoreCase = true)
+          }?.isRtl ?: (langCode.lowercase() in SupportedLanguage.RTL_LANGUAGE_CODES)
+        }
+      val strings = remember(langCode) { appStringsFor(langCode) }
+      val layoutDir = if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
+
+      ShayariLokTheme(dynamicTheme = cachedConfig.dynamicTheme) {
+        CompositionLocalProvider(
+          LocalAppStrings provides strings,
+          LocalLayoutDirection provides layoutDir,
+        ) {
+          NotificationsContent(
+            repository = repository,
+            onBack = { finish() },
+          )
+        }
       }
     }
   }
@@ -84,6 +104,7 @@ private fun NotificationsContent(
   repository: ShayariRepository,
   onBack: () -> Unit,
 ) {
+  val strings = LocalAppStrings.current
   val scope = rememberCoroutineScope()
   val snackbarHostState = remember { SnackbarHostState() }
   var config by remember { mutableStateOf(repository.loadCachedConfig()) }
@@ -122,7 +143,7 @@ private fun NotificationsContent(
         TopAppBar(
           title = {
             Text(
-              text = stringResource(R.string.notifications_title),
+              text = strings.notificationsTitle,
               style = MaterialTheme.typography.titleLarge,
             )
           },
@@ -148,14 +169,14 @@ private fun NotificationsContent(
                       onSuccess = { updated ->
                         config = updated
                         repository.markNotificationsRead(updated)
-                        snackbarHostState.showSnackbar("नई सूचनाएँ ताज़ा हो गईं")
+                        snackbarHostState.showSnackbar(strings.notificationsRefreshedMsg)
                       },
                       onFailure = {
                         val msg =
                           if (repository.isNetworkAvailable()) {
-                            "सभी सूचनाएँ अप-टू-डेट हैं"
+                            strings.notificationsUpToDateMsg
                           } else {
-                            "इन्टरनेट कनेक्शन नहीं है"
+                            strings.offlineErrorShort
                           }
                         snackbarHostState.showSnackbar(msg)
                       },
@@ -216,14 +237,14 @@ private fun NotificationsContent(
           }
           Spacer(modifier = Modifier.height(16.dp))
           Text(
-            text = stringResource(R.string.empty_notifications_title),
+            text = strings.emptyAlertsTitle,
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onBackground,
             textAlign = TextAlign.Center,
           )
           Spacer(modifier = Modifier.height(8.dp))
           Text(
-            text = stringResource(R.string.empty_notifications_subtitle),
+            text = strings.emptyAlertsSubtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

@@ -37,14 +37,27 @@ data class PublicProfile(
   val effectiveHandle: String
     get() =
       when {
-        handle.isNotBlank() -> handle
-        username.startsWith("@") -> username
+        handle.startsWith("@") && handle.length > 1 -> handle
+        handle.isNotBlank() -> "@$handle"
+        username.startsWith("@") && username.length > 1 -> username
         username.isNotBlank() -> "@$username"
         else -> "@SL_${effectiveUid.takeLast(4).uppercase()}"
       }
 
   val effectiveLikesCount: Long
     get() = maxOf(likesReceivedCount, likesCount)
+
+  fun matchesQuery(rawQuery: String): Boolean {
+    val q = rawQuery.trim()
+    if (q.isEmpty()) return true
+    val stripped = q.removePrefix("@")
+    return displayName.contains(q, ignoreCase = true) ||
+      effectiveHandle.contains(q, ignoreCase = true) ||
+      effectiveHandle.removePrefix("@").contains(stripped, ignoreCase = true) ||
+      username.contains(stripped, ignoreCase = true) ||
+      city.contains(q, ignoreCase = true) ||
+      bio.contains(q, ignoreCase = true)
+  }
 }
 
 @IgnoreExtraProperties
@@ -55,6 +68,7 @@ data class PrivateUserAccount(
   val email: String = "",
   val photoUrl: String = "",
   val handle: String = "",
+  val adultContentEnabled: Boolean = false,
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
 )
@@ -67,6 +81,7 @@ data class ChatRoom(
   val partnerId: String = "",
   val partnerHandle: String = "",
   val partnerName: String = "",
+  val partnerPhotoUrl: String = "",
   val lastMessage: String = "",
   val lastSenderId: String = "",
   val messageCount: Long = 0L,
@@ -80,6 +95,7 @@ data class ChatMessage(
   @DocumentId val id: String = "",
   val chatId: String = "",
   val roomId: String = "",
+  val participantIds: List<String> = emptyList(),
   val senderId: String = "",
   val senderName: String = "",
   val senderHandle: String = "",

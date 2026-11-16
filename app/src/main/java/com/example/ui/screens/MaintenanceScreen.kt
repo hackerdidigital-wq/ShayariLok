@@ -32,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.ui.i18n.LocalAppStrings
 
 @Composable
 fun MaintenanceScreen(
@@ -83,6 +84,7 @@ fun MaintenanceScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        val strings = LocalAppStrings.current
         Text(
           text = appName,
           style = MaterialTheme.typography.labelLarge,
@@ -90,7 +92,7 @@ fun MaintenanceScreen(
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-          text = stringResource(R.string.maintenance_title),
+          text = strings.maintenanceTitle,
           style = MaterialTheme.typography.headlineMedium,
           color = MaterialTheme.colorScheme.onSurface,
           textAlign = TextAlign.Center,
@@ -119,7 +121,7 @@ fun MaintenanceScreen(
             modifier = Modifier.size(18.dp),
           )
           Spacer(modifier = Modifier.width(8.dp))
-          Text(text = if (isRefreshing) "Checking..." else "Check Again")
+          Text(text = if (isRefreshing) strings.checkingLabel else strings.checkAgain)
         }
 
         if (socialLink.isNotBlank()) {
@@ -137,7 +139,7 @@ fun MaintenanceScreen(
               modifier = Modifier.size(18.dp),
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = stringResource(R.string.join_community_title))
+            Text(text = strings.menuJoinCommunity)
           }
         }
       }

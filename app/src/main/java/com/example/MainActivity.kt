@@ -72,6 +72,8 @@ import com.example.ui.MainTab
 import com.example.ui.ShayariScreenState
 import com.example.ui.ShayariViewModel
 import com.example.ui.SocialViewModel
+import com.example.ui.i18n.LocalAppStrings
+import com.example.ui.i18n.appStringsFor
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.MaintenanceScreen
 import com.example.ui.screens.MyProfileScreen
@@ -141,9 +143,10 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
   val activeDynamicTheme =
     (uiState.screenState as? ShayariScreenState.Ready)?.config?.dynamicTheme
       ?: com.example.model.DynamicThemeConfig()
+  val appStrings = remember(uiState.selectedLanguageCode) { appStringsFor(uiState.selectedLanguageCode) }
   val layoutDir = if (uiState.isRtlLayout) LayoutDirection.Rtl else LayoutDirection.Ltr
-  val copiedMessage = stringResource(R.string.copied_snackbar)
-  val handleCopiedMessage = stringResource(R.string.handle_copied_snackbar)
+  val copiedMessage = appStrings.copiedSnackbar
+  val handleCopiedMessage = appStrings.handleCopiedSnackbar
 
   val derivedHandle = remember(firebaseUser.uid) { SocialRepository.buildHandleFromUid(firebaseUser.uid) }
   val googleName =
@@ -208,7 +211,10 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
   val totalUnreadAlerts = uiState.unreadNotificationCount + socialState.unreadNotificationsCount
 
   ShayariLokTheme(dynamicTheme = activeDynamicTheme) {
-    CompositionLocalProvider(LocalLayoutDirection provides layoutDir) {
+    CompositionLocalProvider(
+      LocalLayoutDirection provides layoutDir,
+      LocalAppStrings provides appStrings,
+    ) {
       AnimatedContent(
     targetState =
       if (uiState.isSplashVisible) {
@@ -255,6 +261,7 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
               partner = activePartner,
               messages = socialState.activeChatMessages,
               isFollowingPartner = activePartner.effectiveUid in socialState.followingIds,
+              isSendingMessage = socialState.isSendingMessage,
               isBlocked = socialState.myProfile.isBlocked,
               blockReason = socialState.myProfile.blockReason,
               onToggleFollowPartner = { socialViewModel.toggleFollow(activePartner) },
@@ -308,8 +315,9 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
               onFavoriteToggle = viewModel::toggleFavorite,
               onSelectLanguage = viewModel::selectLanguage,
               onSelectCountry = viewModel::selectCountry,
+              onToggleAdultContent = viewModel::setAdultContentAllowed,
               onVotePoll = viewModel::voteInPoll,
-              socialTabContent = { tab ->
+              socialTabContent = { tab, openLocalePicker ->
                 if (tab == MainTab.COMMUNITY) {
                   SocialCommunityScreen(
                     uiState = socialState,
@@ -321,13 +329,32 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
                     onToggleLike = socialViewModel::toggleLike,
                     onOpenChatWith = socialViewModel::openChatWith,
                     onOpenChatRoom = socialViewModel::openChatFromRoom,
+                    onCopyHandle = copyHandleToClipboard,
+                    onRefreshDirectory = socialViewModel::refreshSearchAndDirectory,
+                    onShareInvite = {
+                      shareAppWithFriends(context, ready.config.appName)
+                    },
                   )
                 } else {
                   MyProfileScreen(
                     uiState = socialState,
+                    allowAdultContent = uiState.allowAdultContent,
+                    onToggleAdultContent = viewModel::setAdultContentAllowed,
+                    onOpenLocalePicker = openLocalePicker,
                     onCopyHandle = copyHandleToClipboard,
-                    onUpdateProfile = { name, city, address, bio, onDone ->
-                      socialViewModel.updateProfile(name, city, address, bio, onDone)
+                    onPickGalleryAvatar = { uri ->
+                      socialViewModel.uploadGalleryAvatar(context, uri)
+                    },
+                    onRemoveAvatar = socialViewModel::clearAvatarPhoto,
+                    onUpdateProfile = { name, handle, city, address, bio, onDone ->
+                      socialViewModel.updateProfile(
+                        displayName = name,
+                        handle = handle,
+                        city = city,
+                        address = address,
+                        bio = bio,
+                        onSuccess = onDone,
+                      )
                     },
                     onOpenChatRoom = socialViewModel::openChatFromRoom,
                     onOpenSettings = {
@@ -362,10 +389,10 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
           if (uiState.showUpdateDialog) {
             AlertDialog(
               onDismissRequest = viewModel::dismissUpdateDialog,
-              title = { Text(stringResource(R.string.update_title)) },
+              title = { Text(appStrings.updateAvailable) },
               text = {
                 Text(
-                  "A newer version (${ready.config.latestVersionCode}) of ${ready.config.appName} is available."
+                  "${ready.config.appName} v${ready.config.latestVersionCode}"
                 )
               },
               confirmButton = {
@@ -375,7 +402,7 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
                   },
                   modifier = Modifier.testTag("update_now_button"),
                 ) {
-                  Text(stringResource(R.string.update_action))
+                  Text(appStrings.updateNow)
                 }
               },
               dismissButton = {
@@ -383,7 +410,7 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
                   onClick = viewModel::dismissUpdateDialog,
                   modifier = Modifier.testTag("update_later_button"),
                 ) {
-                  Text(stringResource(R.string.later_action))
+                  Text(appStrings.laterLabel)
                 }
               },
             )
@@ -408,6 +435,7 @@ private fun CleanNoInternetDialog(
   isRetrying: Boolean,
   onRetryClick: () -> Unit,
 ) {
+  val strings = LocalAppStrings.current
   AlertDialog(
     onDismissRequest = {},
     properties =
@@ -435,7 +463,7 @@ private fun CleanNoInternetDialog(
     },
     title = {
       Text(
-        text = stringResource(R.string.offline_dialog_title),
+        text = strings.offlineTitle,
         style = MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Bold,
         color = Color(0xFF1D0D36),
@@ -445,7 +473,7 @@ private fun CleanNoInternetDialog(
     },
     text = {
       Text(
-        text = stringResource(R.string.offline_dialog_message),
+        text = strings.offlineMessage,
         style = MaterialTheme.typography.bodyMedium,
         color = Color(0xFF473E5C),
         textAlign = TextAlign.Center,
@@ -475,11 +503,11 @@ private fun CleanNoInternetDialog(
               modifier = Modifier.size(16.dp),
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = stringResource(R.string.action_retry_hindi))
+            Text(text = strings.retryLabel)
           }
         } else {
           Text(
-            text = stringResource(R.string.action_retry_hindi),
+            text = strings.retryLabel,
             fontWeight = FontWeight.SemiBold,
           )
         }

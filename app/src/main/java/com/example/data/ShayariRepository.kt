@@ -124,6 +124,41 @@ class ShayariRepository(context: Context) {
     prefs.edit().putString(KEY_SELECTED_COUNTRY, code.trim().uppercase()).apply()
   }
 
+  fun isAdultContentAllowed(): Boolean = prefs.getBoolean(KEY_ALLOW_ADULT_18_PLUS, false)
+
+  fun setAdultContentAllowed(allowed: Boolean) {
+    prefs.edit()
+      .putBoolean(KEY_ALLOW_ADULT_18_PLUS, allowed)
+      .apply { if (allowed) putBoolean(KEY_AGE_VERIFIED_18_PLUS, true) }
+      .apply()
+  }
+
+  fun isAgeVerified(): Boolean = prefs.getBoolean(KEY_AGE_VERIFIED_18_PLUS, false)
+
+  suspend fun syncUserPreferencesToFirestore(
+    db: FirebaseFirestore,
+    uid: String,
+    languageCode: String,
+    adultContentEnabled: Boolean,
+  ) {
+    if (uid.isBlank()) return
+    val userDoc = db.collection("users").document(uid)
+    try {
+      userDoc.set(
+        mapOf(
+          "selectedLanguage" to languageCode.trim().lowercase(),
+          "adultContentEnabled" to adultContentEnabled,
+          "updatedAt" to FieldValue.serverTimestamp(),
+        ),
+        SetOptions.merge(),
+      ).await()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.WRITE, userDoc.path)
+    }
+  }
+
   fun getDailyStreakDays(): Int = prefs.getInt(KEY_DAILY_STREAK_COUNT, 1).coerceAtLeast(1)
 
   fun recordDailyVisitAndGetStreak(todayKey: String = formatDateKey(Calendar.getInstance())): Int {
@@ -435,6 +470,13 @@ class ShayariRepository(context: Context) {
                 val numericId =
                   doc.getLong("id")?.toInt()?.takeIf { it > 0 }
                     ?: ((doc.id.hashCode() and 0x7FFFFFFF).takeIf { it > 0 } ?: (10000 + index))
+                val isAdultFlag =
+                  (doc.getBoolean("is_adult")
+                    ?: doc.getBoolean("isAdult")
+                    ?: doc.getBoolean("adult")
+                    ?: doc.getBoolean("is_18_plus")
+                    ?: doc.getBoolean("nsfw")
+                    ?: false) || ShayariItem.isAdultCategoryName(category)
 
                 ShayariItem(
                   id = numericId,
@@ -442,6 +484,7 @@ class ShayariRepository(context: Context) {
                   text = text,
                   author = author,
                   imageUrl = imageUrl,
+                  isAdult = isAdultFlag,
                 )
               }
             }
@@ -533,6 +576,8 @@ class ShayariRepository(context: Context) {
     private const val KEY_LAST_VISIT_DATE = "last_visit_date"
     private const val KEY_DAILY_STREAK_COUNT = "daily_streak_count"
     private const val KEY_POLL_VOTES_JSON = "poll_votes_json"
+    private const val KEY_ALLOW_ADULT_18_PLUS = "allow_adult_18_plus"
+    private const val KEY_AGE_VERIFIED_18_PLUS = "age_verified_18_plus"
     private const val CONNECT_TIMEOUT_MS = 10000
     private const val READ_TIMEOUT_MS = 10000
   }

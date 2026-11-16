@@ -23,7 +23,7 @@ import kotlinx.coroutines.withContext
  */
 object ShayariImageLoader {
   private const val MAX_DECODED_DIMENSION_PX = 512
-  private val bitmapCache = object : LruCache<String, ImageBitmap>(24) {}
+  private val bitmapCache = object : LruCache<String, ImageBitmap>(48) {}
 
   fun getCached(source: String): ImageBitmap? {
     if (source.isBlank()) return null
@@ -40,7 +40,7 @@ object ShayariImageLoader {
         try {
           when {
             trimmed.startsWith("data:image", ignoreCase = true) || isRawBase64(trimmed) -> {
-              val payload = trimmed.substringAfter("base64,", trimmed)
+              val payload = trimmed.substringAfter("base64,", trimmed).replace("\\s".toRegex(), "")
               val bytes = Base64.decode(payload, Base64.DEFAULT)
               decodeSampledByteArray(bytes)
             }

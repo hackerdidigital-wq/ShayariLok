@@ -1,18 +1,26 @@
 package com.example.ui
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import android.util.Log
+import com.example.data.ImageUploadHelper
 import com.example.data.SocialRepository
 import com.example.model.ChatMessage
 import com.example.model.ChatRoom
 import com.example.model.PublicProfile
 import com.example.model.SocialNotification
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +31,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 enum class CommunityFilter {
   ALL,
@@ -42,7 +51,11 @@ private data class SocialStreamSnapshot(
 private data class SocialLocalInteraction(
   val isBootstrapping: Boolean = true,
   val isBusy: Boolean = false,
+  val isUploadingAvatar: Boolean = false,
+  val isSearchingRemote: Boolean = false,
+  val isSendingMessage: Boolean = false,
   val searchQuery: String = "",
+  val remoteSearchMatches: List<PublicProfile> = emptyList(),
   val filter: CommunityFilter = CommunityFilter.ALL,
   val activeChatPartner: PublicProfile? = null,
   val inspectedProfileId: String? = null,
@@ -55,7 +68,11 @@ data class SocialUiState(
   val myProfile: PublicProfile,
   val isBootstrapping: Boolean = true,
   val isBusy: Boolean = false,
+  val isUploadingAvatar: Boolean = false,
+  val isSearchingRemote: Boolean = false,
+  val isSendingMessage: Boolean = false,
   val communityProfiles: List<PublicProfile> = emptyList(),
+  val remoteSearchMatches: List<PublicProfile> = emptyList(),
   val followingIds: Set<String> = emptySet(),
   val likedProfileIds: Set<String> = emptySet(),
   val chats: List<ChatRoom> = emptyList(),
@@ -80,7 +97,20 @@ data class SocialUiState(
     get() = socialNotifications.count { !it.isRead && it.type == "like" }
 
   val otherUsers: List<PublicProfile>
-    get() = communityProfiles.filter { it.effectiveUid != currentUserId }
+    get() {
+      val merged = linkedMapOf<String, PublicProfile>()
+      communityProfiles.forEach { profile ->
+        if (profile.effectiveUid != currentUserId && profile.effectiveUid.isNotBlank()) {
+          merged[profile.effectiveUid] = profile
+        }
+      }
+      remoteSearchMatches.forEach { profile ->
+        if (profile.effectiveUid != currentUserId && profile.effectiveUid.isNotBlank()) {
+          merged.putIfAbsent(profile.effectiveUid, profile)
+        }
+      }
+      return merged.values.toList()
+    }
 
   val filteredCommunityUsers: List<PublicProfile>
     get() {
@@ -95,12 +125,7 @@ data class SocialUiState(
         }
       val q = searchQuery.trim()
       if (q.isEmpty()) return base
-      return base.filter { user ->
-        user.displayName.contains(q, ignoreCase = true) ||
-          user.effectiveHandle.contains(q, ignoreCase = true) ||
-          user.city.contains(q, ignoreCase = true) ||
-          user.bio.contains(q, ignoreCase = true)
-      }
+      return base.filter { user -> user.matchesQuery(q) }
     }
 }
 
@@ -127,6 +152,7 @@ class SocialViewModel(
     )
 
   private val interactionState = MutableStateFlow(SocialLocalInteraction())
+  private var remoteSearchJob: Job? = null
 
   private fun unwrapFirestoreRootError(error: Throwable): Throwable {
     val firestoreError =
@@ -139,44 +165,44 @@ class SocialViewModel(
 
   private val myProfileFlow =
     repository.observeMyProfile(currentUserId).catch { cause ->
-      reportError(unwrapFirestoreRootError(cause))
+      handleBackgroundStreamError(unwrapFirestoreRootError(cause))
       emit(null)
     }
 
   private val discoverableProfilesFlow =
     repository.observeDiscoverableProfiles().catch { cause ->
-      reportError(unwrapFirestoreRootError(cause))
+      handleBackgroundStreamError(unwrapFirestoreRootError(cause))
       emit(emptyList())
     }
 
   private val followingIdsFlow =
     repository.observeMyFollowingIds(currentUserId).catch { cause ->
-      reportError(unwrapFirestoreRootError(cause))
+      handleBackgroundStreamError(unwrapFirestoreRootError(cause))
       emit(emptySet())
     }
 
   private val likedIdsFlow =
     repository.observeMyLikedProfileIds(currentUserId).catch { cause ->
-      reportError(unwrapFirestoreRootError(cause))
+      handleBackgroundStreamError(unwrapFirestoreRootError(cause))
       emit(emptySet())
     }
 
   private val chatsFlow =
     repository.observeMyChats(currentUserId).catch { cause ->
-      reportError(unwrapFirestoreRootError(cause))
+      handleBackgroundStreamError(unwrapFirestoreRootError(cause))
       emit(emptyList())
     }
 
   private val notificationsFlow =
     repository.observeSocialNotifications(currentUserId).catch { cause ->
-      reportError(unwrapFirestoreRootError(cause))
+      handleBackgroundStreamError(unwrapFirestoreRootError(cause))
       emit(emptyList())
     }
 
   private val activeChatMessagesFlow =
     interactionState.flatMapLatest { state ->
       val partner = state.activeChatPartner
-      if (partner == null) {
+      if (partner == null || partner.effectiveUid == currentUserId) {
         flowOf(emptyList())
       } else {
         val chatId = SocialRepository.buildChatRoomId(currentUserId, partner.effectiveUid)
@@ -214,14 +240,14 @@ class SocialViewModel(
         messages,
       ->
       val liveMyProfile = snapshot.myProfile ?: fallbackProfile
+      val allKnown = snapshot.discoverableProfiles + interaction.remoteSearchMatches
       val livePartner =
         interaction.activeChatPartner?.let { partner ->
-          snapshot.discoverableProfiles.firstOrNull { it.effectiveUid == partner.effectiveUid }
-            ?: partner
+          allKnown.firstOrNull { it.effectiveUid == partner.effectiveUid } ?: partner
         }
       val inspected =
         interaction.inspectedProfileId?.let { inspectedId ->
-          snapshot.discoverableProfiles.firstOrNull { it.effectiveUid == inspectedId }
+          allKnown.firstOrNull { it.effectiveUid == inspectedId }
         }
       SocialUiState(
         currentUserId = currentUserId,
@@ -229,7 +255,11 @@ class SocialViewModel(
         myProfile = liveMyProfile,
         isBootstrapping = interaction.isBootstrapping,
         isBusy = interaction.isBusy,
+        isUploadingAvatar = interaction.isUploadingAvatar,
+        isSearchingRemote = interaction.isSearchingRemote,
+        isSendingMessage = interaction.isSendingMessage,
         communityProfiles = snapshot.discoverableProfiles,
+        remoteSearchMatches = interaction.remoteSearchMatches,
         followingIds = snapshot.followingIds,
         likedProfileIds = snapshot.likedIds,
         chats = snapshot.chats,
@@ -253,21 +283,73 @@ class SocialViewModel(
     )
 
   init {
+    syncAccountNow()
+  }
+
+  fun syncAccountNow() {
     viewModelScope.launch {
-      repository
-        .syncGoogleUserOnLogin(
+      interactionState.update { it.copy(isBootstrapping = true) }
+      val firstAttempt =
+        repository.syncGoogleUserOnLogin(
           defaultHandle = defaultHandle,
           defaultDisplayName = defaultName,
           email = userEmail,
           photoUrl = userPhotoUrl,
         )
-        .onFailure { reportError(it) }
+      if (firstAttempt.isFailure) {
+        val root = firstAttempt.exceptionOrNull()?.let { unwrapFirestoreRootError(it) }
+        val isPermDenied =
+          (root as? FirebaseFirestoreException)?.code == FirebaseFirestoreException.Code.PERMISSION_DENIED
+        if (isPermDenied) {
+          runCatching { Firebase.auth.currentUser?.getIdToken(true)?.await() }
+          kotlinx.coroutines.delay(500L)
+          val retryResult =
+            repository.syncGoogleUserOnLogin(
+              defaultHandle = defaultHandle,
+              defaultDisplayName = defaultName,
+              email = userEmail,
+              photoUrl = userPhotoUrl,
+            )
+          retryResult.onFailure { handleBackgroundStreamError(unwrapFirestoreRootError(it)) }
+        } else if (root != null) {
+          handleBackgroundStreamError(root)
+        }
+      }
       interactionState.update { it.copy(isBootstrapping = false) }
     }
   }
 
   fun updateSearchQuery(query: String) {
     interactionState.update { it.copy(searchQuery = query) }
+    remoteSearchJob?.cancel()
+    val trimmed = query.trim()
+    if (trimmed.length < 2) {
+      interactionState.update { it.copy(isSearchingRemote = false, remoteSearchMatches = emptyList()) }
+      return
+    }
+    remoteSearchJob =
+      viewModelScope.launch {
+        delay(280L)
+        interactionState.update { it.copy(isSearchingRemote = true) }
+        repository.searchDiscoverableProfiles(trimmed).fold(
+          onSuccess = { matches ->
+            interactionState.update {
+              it.copy(isSearchingRemote = false, remoteSearchMatches = matches)
+            }
+          },
+          onFailure = {
+            interactionState.update { it.copy(isSearchingRemote = false) }
+          },
+        )
+      }
+  }
+
+  fun refreshSearchAndDirectory() {
+    val q = interactionState.value.searchQuery.trim()
+    syncAccountNow()
+    if (q.length >= 2) {
+      updateSearchQuery(q)
+    }
   }
 
   fun selectFilter(filter: CommunityFilter) {
@@ -283,6 +365,10 @@ class SocialViewModel(
   }
 
   fun openChatWith(partner: PublicProfile) {
+    if (partner.effectiveUid == currentUserId || partner.effectiveUid.isBlank()) {
+      interactionState.update { it.copy(actionFeedback = "Cannot start chat with this user") }
+      return
+    }
     interactionState.update {
       it.copy(activeChatPartner = partner, inspectedProfileId = null)
     }
@@ -298,6 +384,7 @@ class SocialViewModel(
           uid = room.partnerId,
           handle = room.partnerHandle.ifBlank { "@SL_USER" },
           displayName = room.partnerName.ifBlank { "Shayar Friend" },
+          photoUrl = room.partnerPhotoUrl,
         )
     openChatWith(partner)
   }
@@ -323,11 +410,73 @@ class SocialViewModel(
     interactionState.update { it.copy(activeChatPartner = null) }
   }
 
+  fun uploadGalleryAvatar(context: Context, uri: Uri, onResult: (String?) -> Unit = {}) {
+    if (interactionState.value.isUploadingAvatar) return
+    viewModelScope.launch {
+      interactionState.update { it.copy(isUploadingAvatar = true) }
+      val encoded = ImageUploadHelper.processPickedAvatarUri(context, uri)
+      encoded.fold(
+        onSuccess = { dataUri ->
+          repository.updateMyAvatarPhoto(dataUri).fold(
+            onSuccess = {
+              interactionState.update {
+                it.copy(isUploadingAvatar = false, actionFeedback = "Profile photo updated!")
+              }
+              onResult(dataUri)
+            },
+            onFailure = { err ->
+              interactionState.update {
+                it.copy(
+                  isUploadingAvatar = false,
+                  actionFeedback = err.localizedMessage ?: "Failed to save profile photo",
+                )
+              }
+              onResult(null)
+            },
+          )
+        },
+        onFailure = { err ->
+          interactionState.update {
+            it.copy(
+              isUploadingAvatar = false,
+              actionFeedback = err.localizedMessage ?: "Could not process selected photo",
+            )
+          }
+          onResult(null)
+        },
+      )
+    }
+  }
+
+  fun clearAvatarPhoto() {
+    if (interactionState.value.isUploadingAvatar) return
+    viewModelScope.launch {
+      interactionState.update { it.copy(isUploadingAvatar = true) }
+      repository.updateMyAvatarPhoto("").fold(
+        onSuccess = {
+          interactionState.update {
+            it.copy(isUploadingAvatar = false, actionFeedback = "Profile photo removed")
+          }
+        },
+        onFailure = { err ->
+          interactionState.update {
+            it.copy(
+              isUploadingAvatar = false,
+              actionFeedback = err.localizedMessage ?: "Could not remove photo",
+            )
+          }
+        },
+      )
+    }
+  }
+
   fun updateProfile(
     displayName: String,
+    handle: String?,
     city: String,
     address: String,
     bio: String,
+    photoUrl: String? = null,
     onSuccess: () -> Unit = {},
   ) {
     if (interactionState.value.isBusy) return
@@ -336,9 +485,11 @@ class SocialViewModel(
       repository
         .updateMyProfile(
           displayName = displayName,
+          handle = handle,
           city = city,
           address = address,
           bio = bio,
+          photoUrl = photoUrl,
         )
         .onSuccess {
           interactionState.update {
@@ -391,19 +542,27 @@ class SocialViewModel(
   }
 
   fun sendMessage(rawText: String, onSent: () -> Unit = {}) {
+    if (interactionState.value.isSendingMessage) return
     val state = uiState.value
     val partner = state.activeChatPartner ?: return
     val clean = rawText.trim()
     if (clean.isEmpty()) return
     viewModelScope.launch {
+      interactionState.update { it.copy(isSendingMessage = true) }
       repository
         .sendChatMessage(
           selfProfile = state.myProfile,
           targetProfile = partner,
           rawText = clean,
         )
-        .onSuccess { onSent() }
-        .onFailure { reportError(it) }
+        .onSuccess {
+          interactionState.update { it.copy(isSendingMessage = false) }
+          onSent()
+        }
+        .onFailure { err ->
+          interactionState.update { it.copy(isSendingMessage = false) }
+          reportError(err)
+        }
     }
   }
 
@@ -428,8 +587,20 @@ class SocialViewModel(
     interactionState.update { it.copy(actionFeedback = null) }
   }
 
+  private fun handleBackgroundStreamError(cause: Throwable) {
+    Log.w("SocialViewModel", "Firestore stream fallback active: ${cause.localizedMessage}")
+  }
+
   private fun reportError(cause: Throwable) {
-    val msg = cause.localizedMessage ?: "Firestore sync error"
+    val root = unwrapFirestoreRootError(cause)
+    val msg =
+      if (root is FirebaseFirestoreException &&
+        root.code == FirebaseFirestoreException.Code.PERMISSION_DENIED
+      ) {
+        "Database permission restricted. Please check Firestore Rules in Firebase Console."
+      } else {
+        root.localizedMessage ?: "Firestore sync error"
+      }
     interactionState.update { it.copy(actionFeedback = msg) }
   }
 

@@ -42,6 +42,7 @@ import com.example.R
 import com.example.model.ShayariPoll
 import com.example.model.SupportedCountry
 import com.example.model.SupportedLanguage
+import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgeOrange
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.CrownGold
@@ -60,6 +61,7 @@ fun DailyStreakAndLocaleBar(
   onOpenLocalePicker: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val strings = LocalAppStrings.current
   Row(
     modifier = modifier.fillMaxWidth(),
     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -87,7 +89,7 @@ fun DailyStreakAndLocaleBar(
           ) {
             Icon(
               painter = painterResource(id = R.drawable.ic_flame),
-              contentDescription = stringResource(R.string.daily_streak_label),
+              contentDescription = strings.dayStreakSuffix,
               tint = Color.White,
               modifier = Modifier.size(16.dp),
             )
@@ -95,14 +97,14 @@ fun DailyStreakAndLocaleBar(
           Spacer(modifier = Modifier.width(8.dp))
           Column {
             Text(
-              text = "$streakDays Day Streak",
+              text = "$streakDays ${strings.dayStreakSuffix}",
               style = MaterialTheme.typography.labelLarge,
               fontWeight = FontWeight.ExtraBold,
               color = CrownGold,
               maxLines = 1,
             )
             Text(
-              text = "Daily Shayari Reward",
+              text = strings.dailyRewardSubtitle,
               style = MaterialTheme.typography.labelSmall,
               color = Color(0xFFD2C4EB),
               fontSize = 10.sp,
@@ -129,7 +131,7 @@ fun DailyStreakAndLocaleBar(
       ) {
         Icon(
           painter = painterResource(id = R.drawable.ic_language),
-          contentDescription = stringResource(R.string.language_country_title),
+          contentDescription = strings.menuLanguageRegion,
           tint = CrownGold,
           modifier = Modifier.size(18.dp),
         )
@@ -165,6 +167,7 @@ fun LivePollCard(
   onVote: (pollId: String, optionId: String) -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val strings = LocalAppStrings.current
   val hasVoted = !selectedOptionId.isNullOrBlank()
   val effectiveTotal =
     poll.totalVotes + if (hasVoted && poll.options.none { it.id == selectedOptionId && it.votes > 0 }) 1 else 0
@@ -188,7 +191,7 @@ fun LivePollCard(
           border = BorderStroke(0.8.dp, NeonPink.copy(alpha = 0.65f)),
         ) {
           Text(
-            text = stringResource(R.string.live_poll_badge),
+            text = strings.livePollBadge,
             style = MaterialTheme.typography.labelSmall,
             color = Color(0xFFFFB6D9),
             fontWeight = FontWeight.ExtraBold,
@@ -196,7 +199,7 @@ fun LivePollCard(
           )
         }
         Text(
-          text = "${effectiveTotal} votes",
+          text = "$effectiveTotal ${strings.votesSuffix}",
           style = MaterialTheme.typography.labelSmall,
           color = Color(0xFFD2C4EB),
         )
@@ -286,13 +289,14 @@ fun LanguageCountrySelectorDialog(
   onSelectCountry: (String) -> Unit,
   onDismiss: () -> Unit,
 ) {
+  val strings = LocalAppStrings.current
   AlertDialog(
     onDismissRequest = onDismiss,
     containerColor = DarkSurface,
     shape = RoundedCornerShape(24.dp),
     title = {
       Text(
-        text = stringResource(R.string.language_country_title),
+        text = strings.menuLanguageRegion,
         color = Color.White,
         fontWeight = FontWeight.Bold,
       )
@@ -300,7 +304,7 @@ fun LanguageCountrySelectorDialog(
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-          text = "Select Language (Urdu auto-switches to RTL)",
+          text = strings.selectLanguageHeading,
           style = MaterialTheme.typography.labelMedium,
           color = CrownGold,
           fontWeight = FontWeight.SemiBold,
@@ -338,7 +342,7 @@ fun LanguageCountrySelectorDialog(
 
         Spacer(modifier = Modifier.height(4.dp))
         Text(
-          text = "Select Country / Region",
+          text = strings.selectCountryHeading,
           style = MaterialTheme.typography.labelMedium,
           color = CrownGold,
           fontWeight = FontWeight.SemiBold,
@@ -377,7 +381,7 @@ fun LanguageCountrySelectorDialog(
     },
     confirmButton = {
       TextButton(onClick = onDismiss) {
-        Text("Done", color = CrownGold, fontWeight = FontWeight.Bold)
+        Text(strings.doneAction, color = CrownGold, fontWeight = FontWeight.Bold)
       }
     },
   )

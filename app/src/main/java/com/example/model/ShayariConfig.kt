@@ -251,6 +251,7 @@ data class ShayariItem(
   val text: String,
   val author: String = "",
   val imageUrl: String = "",
+  val isAdult: Boolean = false,
 ) {
   fun toJson(): JSONObject =
     JSONObject().apply {
@@ -259,11 +260,22 @@ data class ShayariItem(
       put("text", text)
       if (author.isNotBlank()) put("author", author)
       if (imageUrl.isNotBlank()) put("image_url", imageUrl)
+      if (isAdult) put("is_adult", true)
     }
 
   companion object {
     private val IMAGE_KEYS =
       listOf("image_url", "image", "photo_url", "photo", "thumbnail", "thumbnail_url", "img")
+
+    fun isAdultCategoryName(category: String): Boolean {
+      val norm = category.trim().lowercase()
+      return norm.contains("18+") ||
+        norm.contains("adult") ||
+        norm.contains("mature") ||
+        norm.contains("nsfw") ||
+        norm == "bold" ||
+        norm == "hot"
+    }
 
     fun fromJson(json: JSONObject, fallbackId: Int = -1): ShayariItem? {
       val rawId = json.optFlexibleInt("id", fallbackId)
@@ -275,6 +287,21 @@ data class ShayariItem(
         IMAGE_KEYS.firstNotNullOfOrNull { key ->
           json.optCleanString(key).takeIf { it.isNotEmpty() }
         } ?: ""
+      val explicitAdult =
+        json.optFlexibleBoolean(
+          "is_adult",
+          json.optFlexibleBoolean(
+            "isAdult",
+            json.optFlexibleBoolean(
+              "adult",
+              json.optFlexibleBoolean(
+                "is_18_plus",
+                json.optFlexibleBoolean("nsfw", json.optFlexibleBoolean("age_restricted", false)),
+              ),
+            ),
+          ),
+        )
+      val adult = explicitAdult || isAdultCategoryName(category)
       if (text.isEmpty()) return null
       return ShayariItem(
         id = parsedId,
@@ -282,6 +309,7 @@ data class ShayariItem(
         text = text,
         author = author,
         imageUrl = imageUrl,
+        isAdult = adult,
       )
     }
   }

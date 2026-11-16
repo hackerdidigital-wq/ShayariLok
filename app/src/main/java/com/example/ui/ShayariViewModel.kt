@@ -39,35 +39,57 @@ sealed interface ShayariScreenState {
     val activeTab: MainTab,
     val favoriteIds: Set<Int>,
     val searchQuery: String,
+    val allowAdultContent: Boolean = false,
   ) : ShayariScreenState {
-    val visibleShayaris: List<ShayariItem>
-      get() {
-        val base =
-          if (activeTab == MainTab.FAVORITES) {
-            config.shayariList.filter { it.id in favoriteIds }
-          } else {
-            config.shayariList
-          }
-        val byCategory =
-          if (
-            selectedCategory.equals("Popular", ignoreCase = true) ||
-              selectedCategory.equals("All", ignoreCase = true)
-          ) {
-            base
-          } else {
-            base.filter { it.category.equals(selectedCategory, ignoreCase = true) }
-          }
-        val query = searchQuery.trim()
-        return if (query.isEmpty()) {
-          byCategory
+    val visibleCategories: List<String>
+      get() =
+        if (allowAdultContent) {
+          config.categories
         } else {
-          byCategory.filter { item ->
-            item.text.contains(query, ignoreCase = true) ||
-              item.category.contains(query, ignoreCase = true) ||
-              item.author.contains(query, ignoreCase = true)
-          }
+          config.categories.filterNot { ShayariItem.isAdultCategoryName(it) }
+        }
+
+    private fun matchingCategoryAndQuery(): List<ShayariItem> {
+      val base =
+        if (activeTab == MainTab.FAVORITES) {
+          config.shayariList.filter { it.id in favoriteIds }
+        } else {
+          config.shayariList
+        }
+      val byCategory =
+        if (
+          selectedCategory.equals("Popular", ignoreCase = true) ||
+            selectedCategory.equals("All", ignoreCase = true)
+        ) {
+          base
+        } else {
+          base.filter { it.category.equals(selectedCategory, ignoreCase = true) }
+        }
+      val query = searchQuery.trim()
+      return if (query.isEmpty()) {
+        byCategory
+      } else {
+        byCategory.filter { item ->
+          item.text.contains(query, ignoreCase = true) ||
+            item.category.contains(query, ignoreCase = true) ||
+            item.author.contains(query, ignoreCase = true)
         }
       }
+    }
+
+    val hiddenAdultCount: Int
+      get() =
+        if (allowAdultContent) {
+          0
+        } else {
+          matchingCategoryAndQuery().count { it.isAdult }
+        }
+
+    val visibleShayaris: List<ShayariItem>
+      get() =
+        matchingCategoryAndQuery().let { list ->
+          if (allowAdultContent) list else list.filterNot { it.isAdult }
+        }
   }
 }
 
@@ -88,6 +110,7 @@ data class ShayariUiState(
   val selectedLanguageCode: String = "hi",
   val selectedCountryCode: String = "IN",
   val isRtlLayout: Boolean = false,
+  val allowAdultContent: Boolean = false,
   val dailyStreakDays: Int = 1,
   val votedPollOptions: Map<String, String> = emptyMap(),
 )
@@ -109,6 +132,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
   private var textSize: ShayariTextSize = repository.getShayariTextSize()
   private var selectedLanguageCode: String = repository.getSelectedLanguageCode()
   private var selectedCountryCode: String = repository.getSelectedCountryCode()
+  private var allowAdultContent: Boolean = repository.isAdultContentAllowed()
   private var dailyStreakDays: Int = repository.recordDailyVisitAndGetStreak()
   private var votedPollOptions: Map<String, String> = repository.getVotedPollOptions()
   private var searchQuery: String = ""
@@ -131,6 +155,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         selectedLanguageCode = selectedLanguageCode,
         selectedCountryCode = selectedCountryCode,
         isRtlLayout = computeIsRtl(selectedLanguageCode, currentConfig),
+        allowAdultContent = allowAdultContent,
         dailyStreakDays = dailyStreakDays,
         votedPollOptions = votedPollOptions,
       )
@@ -207,6 +232,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     selectedLanguageCode = normalized
     repository.setSelectedLanguageCode(normalized)
     publishCurrentState(syncMessage = null)
+    syncPrefsToFirestoreIfReady()
   }
 
   fun selectCountry(countryCode: String) {
@@ -214,6 +240,30 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     selectedCountryCode = normalized
     repository.setSelectedCountryCode(normalized)
     publishCurrentState(syncMessage = null)
+  }
+
+  fun setAdultContentAllowed(allowed: Boolean) {
+    allowAdultContent = allowed
+    repository.setAdultContentAllowed(allowed)
+    if (!allowed && ShayariItem.isAdultCategoryName(selectedCategory)) {
+      selectedCategory = "All"
+    }
+    publishCurrentState(syncMessage = null)
+    syncPrefsToFirestoreIfReady()
+  }
+
+  private fun syncPrefsToFirestoreIfReady() {
+    val db = attachedFirestore ?: return
+    val uid = attachedUid
+    if (uid.isBlank()) return
+    viewModelScope.launch {
+      repository.syncUserPreferencesToFirestore(
+        db = db,
+        uid = uid,
+        languageCode = selectedLanguageCode,
+        adultContentEnabled = allowAdultContent,
+      )
+    }
   }
 
   fun voteInPoll(pollId: String, optionId: String) {
@@ -291,6 +341,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
     textSize = repository.getShayariTextSize()
     selectedLanguageCode = repository.getSelectedLanguageCode()
     selectedCountryCode = repository.getSelectedCountryCode()
+    allowAdultContent = repository.isAdultContentAllowed()
     dailyStreakDays = repository.recordDailyVisitAndGetStreak()
     votedPollOptions = repository.getVotedPollOptions()
     if (
@@ -468,6 +519,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
           activeTab = activeTab,
           favoriteIds = favoriteIds,
           searchQuery = searchQuery,
+          allowAdultContent = allowAdultContent,
         )
       }
 
@@ -496,6 +548,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         selectedLanguageCode = selectedLanguageCode,
         selectedCountryCode = selectedCountryCode,
         isRtlLayout = computeIsRtl(selectedLanguageCode, currentConfig),
+        allowAdultContent = allowAdultContent,
         dailyStreakDays = dailyStreakDays,
         votedPollOptions = votedPollOptions,
       )

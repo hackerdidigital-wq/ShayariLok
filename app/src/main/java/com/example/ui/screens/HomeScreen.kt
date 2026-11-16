@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -56,6 +57,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -96,6 +98,7 @@ import com.example.ui.components.DailyStreakAndLocaleBar
 import com.example.ui.components.LanguageCountrySelectorDialog
 import com.example.ui.components.LivePollCard
 import com.example.ui.components.ShayariCard
+import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.CrownGold
 import com.example.ui.theme.DeepRoyalPurple
@@ -138,11 +141,14 @@ fun HomeScreen(
   onFavoriteToggle: (Int) -> Unit,
   onSelectLanguage: (String) -> Unit = {},
   onSelectCountry: (String) -> Unit = {},
+  onToggleAdultContent: (Boolean) -> Unit = {},
   onVotePoll: (pollId: String, optionId: String) -> Unit = { _, _ -> },
-  socialTabContent: @Composable (MainTab) -> Unit,
+  socialTabContent: @Composable (tab: MainTab, openLocalePicker: () -> Unit) -> Unit,
 ) {
+  val strings = LocalAppStrings.current
   var isMenuExpanded by remember { mutableStateOf(false) }
   var showLocaleDialog by remember { mutableStateOf(false) }
+  var showAgeConfirmDialog by remember { mutableStateOf(false) }
 
   BackHandler(enabled = isMenuExpanded) {
     isMenuExpanded = false
@@ -285,7 +291,7 @@ fun HomeScreen(
                 DropdownMenuItem(
                   text = {
                     Text(
-                      text = if (isRefreshing) "Syncing Shayari..." else "Sync Latest Shayari",
+                      text = if (isRefreshing) strings.menuSyncing else strings.menuSync,
                       color = Color(0xFF1D0D36),
                     )
                   },
@@ -305,7 +311,7 @@ fun HomeScreen(
                   modifier = Modifier.testTag("menu_sync_item"),
                 )
                 DropdownMenuItem(
-                  text = { Text("Share App", color = Color(0xFF1D0D36)) },
+                  text = { Text(strings.menuShareApp, color = Color(0xFF1D0D36)) },
                   leadingIcon = {
                     Icon(
                       painter = painterResource(id = R.drawable.ic_share),
@@ -324,7 +330,7 @@ fun HomeScreen(
                   DropdownMenuItem(
                     text = {
                       Text(
-                        text = stringResource(R.string.join_community_title),
+                        text = strings.menuJoinCommunity,
                         color = Color(0xFF1D0D36),
                       )
                     },
@@ -346,7 +352,7 @@ fun HomeScreen(
                 DropdownMenuItem(
                   text = {
                     Text(
-                      text = stringResource(R.string.language_country_title),
+                      text = strings.menuLanguageRegion,
                       color = Color(0xFF1D0D36),
                     )
                   },
@@ -367,7 +373,7 @@ fun HomeScreen(
                 DropdownMenuItem(
                   text = {
                     Text(
-                      text = stringResource(R.string.settings_title),
+                      text = strings.menuSettings,
                       color = Color(0xFF1D0D36),
                     )
                   },
@@ -459,7 +465,7 @@ fun HomeScreen(
               if (readyState.activeTab == MainTab.EXPLORE || readyState.activeTab == MainTab.FAVORITES) {
                 HeaderIconButton(
                   iconRes = R.drawable.ic_search,
-                  contentDescription = "Search Shayari",
+                  contentDescription = strings.searchShayariHint,
                   tint = if (isSearchVisible) CrownGold else Color.White,
                   testTag = "search_button",
                   onClick = onToggleSearch,
@@ -479,7 +485,7 @@ fun HomeScreen(
               singleLine = true,
               placeholder = {
                 Text(
-                  text = "Search Shayari...",
+                  text = strings.searchShayariHint,
                   color = Color.White.copy(alpha = 0.65f),
                 )
               },
@@ -533,11 +539,11 @@ fun HomeScreen(
               icon = {
                 Icon(
                   painter = painterResource(id = R.drawable.ic_home),
-                  contentDescription = "Home",
+                  contentDescription = strings.tabHome,
                   modifier = Modifier.size(22.dp),
                 )
               },
-              label = { Text("Home") },
+              label = { Text(strings.tabHome) },
               modifier = Modifier.testTag("nav_home"),
             )
             NavigationRailItem(
@@ -546,11 +552,11 @@ fun HomeScreen(
               icon = {
                 Icon(
                   painter = painterResource(id = R.drawable.ic_community),
-                  contentDescription = stringResource(R.string.tab_community),
+                  contentDescription = strings.tabFriends,
                   modifier = Modifier.size(22.dp),
                 )
               },
-              label = { Text(stringResource(R.string.tab_community)) },
+              label = { Text(strings.tabFriends) },
               modifier = Modifier.testTag("nav_community"),
             )
             NavigationRailItem(
@@ -559,11 +565,11 @@ fun HomeScreen(
               icon = {
                 Icon(
                   painter = painterResource(id = R.drawable.ic_heart_filled),
-                  contentDescription = stringResource(R.string.tab_favorites),
+                  contentDescription = strings.tabFavorites,
                   modifier = Modifier.size(22.dp),
                 )
               },
-              label = { Text(stringResource(R.string.tab_favorites)) },
+              label = { Text(strings.tabFavorites) },
               modifier = Modifier.testTag("nav_favorites"),
             )
             NavigationRailItem(
@@ -572,11 +578,11 @@ fun HomeScreen(
               icon = {
                 Icon(
                   painter = painterResource(id = R.drawable.ic_notification),
-                  contentDescription = stringResource(R.string.cd_notifications),
+                  contentDescription = strings.tabAlerts,
                   modifier = Modifier.size(22.dp),
                 )
               },
-              label = { Text(stringResource(R.string.tab_alerts)) },
+              label = { Text(strings.tabAlerts) },
               modifier = Modifier.testTag("nav_notifications"),
             )
             NavigationRailItem(
@@ -585,11 +591,11 @@ fun HomeScreen(
               icon = {
                 Icon(
                   painter = painterResource(id = R.drawable.ic_person),
-                  contentDescription = stringResource(R.string.tab_profile),
+                  contentDescription = strings.tabProfile,
                   modifier = Modifier.size(22.dp),
                 )
               },
-              label = { Text(stringResource(R.string.tab_profile)) },
+              label = { Text(strings.tabProfile) },
               modifier = Modifier.testTag("nav_profile"),
             )
             NavigationRailItem(
@@ -598,11 +604,11 @@ fun HomeScreen(
               icon = {
                 Icon(
                   painter = painterResource(id = R.drawable.ic_settings),
-                  contentDescription = stringResource(R.string.cd_settings),
+                  contentDescription = strings.tabSettings,
                   modifier = Modifier.size(22.dp),
                 )
               },
-              label = { Text("Settings") },
+              label = { Text(strings.tabSettings) },
               modifier = Modifier.testTag("nav_settings"),
             )
           }
@@ -613,7 +619,7 @@ fun HomeScreen(
           horizontalAlignment = Alignment.CenterHorizontally,
         ) {
           if (readyState.activeTab == MainTab.COMMUNITY || readyState.activeTab == MainTab.PROFILE) {
-            socialTabContent(readyState.activeTab)
+            socialTabContent(readyState.activeTab) { showLocaleDialog = true }
           } else {
           if (readyState.activeTab == MainTab.EXPLORE) {
             LazyRow(
@@ -621,7 +627,7 @@ fun HomeScreen(
               horizontalArrangement = Arrangement.spacedBy(8.dp),
               modifier = Modifier.widthIn(max = 960.dp).fillMaxWidth(),
             ) {
-              items(readyState.config.categories, key = { it }) { category ->
+              items(readyState.visibleCategories, key = { it }) { category ->
                 val isSelected = category.equals(readyState.selectedCategory, ignoreCase = true)
                 val chipInteraction = remember { MutableInteractionSource() }
                 val chipBg by
@@ -671,7 +677,7 @@ fun HomeScreen(
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
                   ) {
                     Text(
-                      text = category,
+                      text = strings.categoryLabel(category),
                       style = MaterialTheme.typography.labelLarge,
                       fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                       color = chipTextColor,
@@ -717,6 +723,17 @@ fun HomeScreen(
                     .fillMaxSize()
                     .align(Alignment.TopCenter),
               ) {
+                if (readyState.activeTab == MainTab.EXPLORE && readyState.hiddenAdultCount > 0) {
+                  item(
+                    key = "safe_mode_grid_banner",
+                    span = { GridItemSpan(gridColumns) },
+                  ) {
+                    SafeModeNoticeBanner(
+                      hiddenCount = readyState.hiddenAdultCount,
+                      onUnlockClick = { showAgeConfirmDialog = true },
+                    )
+                  }
+                }
                 items(items, key = { it.id }) { item ->
                   ShayariCard(
                     item = item,
@@ -749,6 +766,14 @@ fun HomeScreen(
                       selectedCountry = selectedCountryObj,
                       onOpenLocalePicker = { showLocaleDialog = true },
                     )
+                  }
+                  if (readyState.hiddenAdultCount > 0) {
+                    item(key = "safe_mode_list_banner") {
+                      SafeModeNoticeBanner(
+                        hiddenCount = readyState.hiddenAdultCount,
+                        onUnlockClick = { showAgeConfirmDialog = true },
+                      )
+                    }
                   }
                   if (engagement.polls.isNotEmpty()) {
                     items(engagement.polls, key = { "poll_${it.id}" }) { poll ->
@@ -792,6 +817,67 @@ fun HomeScreen(
         onSelectCountry = onSelectCountry,
         onDismiss = { showLocaleDialog = false },
       )
+    }
+
+    if (showAgeConfirmDialog) {
+      AgeConfirmationDialog(
+        onConfirm18Plus = {
+          showAgeConfirmDialog = false
+          onToggleAdultContent(true)
+        },
+        onDismiss = { showAgeConfirmDialog = false },
+      )
+    }
+  }
+}
+
+@Composable
+private fun SafeModeNoticeBanner(
+  hiddenCount: Int,
+  onUnlockClick: () -> Unit,
+) {
+  val strings = LocalAppStrings.current
+  Surface(
+    shape = RoundedCornerShape(16.dp),
+    color = Color(0xFF28114A),
+    border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.45f)),
+    modifier = Modifier.fillMaxWidth().testTag("safe_mode_banner"),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.weight(1f).padding(end = 8.dp),
+      ) {
+        Icon(
+          painter = painterResource(id = R.drawable.ic_shield),
+          contentDescription = null,
+          tint = CrownGold,
+          modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+          text = "${strings.safeModeActiveBanner} $hiddenCount",
+          style = MaterialTheme.typography.labelMedium,
+          color = Color(0xFFE7DAF8),
+        )
+      }
+      OutlinedButton(
+        onClick = onUnlockClick,
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.7f)),
+        modifier = Modifier.minimumInteractiveComponentSize().testTag("unlock_18_plus_banner_button"),
+      ) {
+        Text(
+          text = strings.unlock18PlusCta,
+          style = MaterialTheme.typography.labelSmall,
+          fontWeight = FontWeight.Bold,
+          color = CrownGold,
+        )
+      }
     }
   }
 }
@@ -878,6 +964,7 @@ private fun CleanWhiteBottomBar(
   onSelectTab: (MainTab) -> Unit,
   onNotificationsClick: () -> Unit,
 ) {
+  val strings = LocalAppStrings.current
   Surface(
     color = Color.White,
     shadowElevation = 8.dp,
@@ -895,7 +982,7 @@ private fun CleanWhiteBottomBar(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         BottomBarTabItem(
-          label = "Home",
+          label = strings.tabHome,
           iconRes = R.drawable.ic_home,
           selected = activeTab == MainTab.EXPLORE,
           badgeCount = 0,
@@ -904,7 +991,7 @@ private fun CleanWhiteBottomBar(
           modifier = Modifier.weight(1f),
         )
         BottomBarTabItem(
-          label = stringResource(R.string.tab_community),
+          label = strings.tabFriends,
           iconRes = R.drawable.ic_community,
           selected = activeTab == MainTab.COMMUNITY,
           badgeCount = 0,
@@ -913,7 +1000,7 @@ private fun CleanWhiteBottomBar(
           modifier = Modifier.weight(1f),
         )
         BottomBarTabItem(
-          label = stringResource(R.string.tab_favorites),
+          label = strings.tabFavorites,
           iconRes = R.drawable.ic_heart_filled,
           selected = activeTab == MainTab.FAVORITES,
           badgeCount = 0,
@@ -922,7 +1009,7 @@ private fun CleanWhiteBottomBar(
           modifier = Modifier.weight(1f),
         )
         BottomBarTabItem(
-          label = stringResource(R.string.tab_alerts),
+          label = strings.tabAlerts,
           iconRes = R.drawable.ic_notification,
           selected = false,
           badgeCount = unreadNotificationCount,
@@ -931,7 +1018,7 @@ private fun CleanWhiteBottomBar(
           modifier = Modifier.weight(1f),
         )
         BottomBarTabItem(
-          label = stringResource(R.string.tab_profile),
+          label = strings.tabProfile,
           iconRes = R.drawable.ic_person,
           selected = activeTab == MainTab.PROFILE,
           badgeCount = 0,
@@ -1013,6 +1100,7 @@ private fun EmptyShayariState(
   isFavoritesTab: Boolean,
   modifier: Modifier = Modifier,
 ) {
+  val strings = LocalAppStrings.current
   Column(
     modifier = modifier,
     horizontalAlignment = Alignment.CenterHorizontally,
@@ -1039,9 +1127,7 @@ private fun EmptyShayariState(
     Spacer(modifier = Modifier.height(14.dp))
     Text(
       text =
-        stringResource(
-          if (isFavoritesTab) R.string.empty_favorites_title else R.string.empty_category_title
-        ),
+        if (isFavoritesTab) strings.emptyFavoritesTitle else strings.emptyCategoryTitle,
       style = MaterialTheme.typography.titleLarge,
       color = Color.White,
       textAlign = TextAlign.Center,
@@ -1049,13 +1135,11 @@ private fun EmptyShayariState(
     Spacer(modifier = Modifier.height(6.dp))
     Text(
       text =
-        stringResource(
-          if (isFavoritesTab) {
-            R.string.empty_favorites_subtitle
-          } else {
-            R.string.empty_category_subtitle
-          }
-        ),
+        if (isFavoritesTab) {
+          strings.emptyFavoritesSubtitle
+        } else {
+          strings.emptyCategorySubtitle
+        },
       style = MaterialTheme.typography.bodyMedium,
       color = Color(0xFFD2C4EB),
       textAlign = TextAlign.Center,

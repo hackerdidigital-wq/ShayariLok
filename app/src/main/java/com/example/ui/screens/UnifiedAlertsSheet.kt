@@ -40,6 +40,7 @@ import com.example.R
 import com.example.model.ShayariNotification
 import com.example.model.SocialNotification
 import com.example.ui.SocialUiState
+import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgeBlue
 import com.example.ui.theme.BadgePink
 import com.example.ui.theme.BadgePurple
@@ -58,6 +59,7 @@ fun UnifiedAlertsSheet(
   onMarkSocialRead: () -> Unit,
   onDismiss: () -> Unit,
 ) {
+  val strings = LocalAppStrings.current
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     containerColor = DarkSurface,
@@ -70,7 +72,7 @@ fun UnifiedAlertsSheet(
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Text(
-          text = "Live Alerts & Updates",
+          text = strings.liveAlertsTitle,
           style = MaterialTheme.typography.titleLarge,
           fontWeight = FontWeight.ExtraBold,
           color = Color.White,
@@ -80,7 +82,7 @@ fun UnifiedAlertsSheet(
             onClick = onMarkSocialRead,
             modifier = Modifier.minimumInteractiveComponentSize().testTag("mark_all_alerts_read"),
           ) {
-            Text("Mark Read", color = CrownGold, fontWeight = FontWeight.SemiBold)
+            Text(strings.markRead, color = CrownGold, fontWeight = FontWeight.SemiBold)
           }
         }
       }
@@ -91,17 +93,17 @@ fun UnifiedAlertsSheet(
         modifier = Modifier.fillMaxWidth(),
       ) {
         AlertSummaryPill(
-          label = "${socialState.unreadMessageAlertsCount} Msg",
+          label = "${socialState.unreadMessageAlertsCount} ${strings.msgShort}",
           color = BadgePink,
           modifier = Modifier.weight(1f),
         )
         AlertSummaryPill(
-          label = "${socialState.unreadFollowAlertsCount} Follow",
+          label = "${socialState.unreadFollowAlertsCount} ${strings.followShort}",
           color = BadgePurple,
           modifier = Modifier.weight(1f),
         )
         AlertSummaryPill(
-          label = "${socialState.unreadLikeAlertsCount} Likes",
+          label = "${socialState.unreadLikeAlertsCount} ${strings.likesShort}",
           color = BadgeBlue,
           modifier = Modifier.weight(1f),
         )
@@ -117,7 +119,7 @@ fun UnifiedAlertsSheet(
         if (socialState.socialNotifications.isNotEmpty()) {
           item {
             Text(
-              text = "Friends, Followers & Messages",
+              text = strings.friendsFollowersMessages,
               style = MaterialTheme.typography.labelLarge,
               color = CrownGold,
               fontWeight = FontWeight.Bold,
@@ -134,7 +136,7 @@ fun UnifiedAlertsSheet(
         if (adminNotifications.isNotEmpty()) {
           item {
             Text(
-              text = "Official Shayari Announcements",
+              text = strings.officialAnnouncements,
               style = MaterialTheme.typography.labelLarge,
               color = CrownGold,
               fontWeight = FontWeight.Bold,
@@ -149,7 +151,7 @@ fun UnifiedAlertsSheet(
         if (socialState.socialNotifications.isEmpty() && adminNotifications.isEmpty()) {
           item {
             Text(
-              text = "All caught up! New chats, followers, likes, and Shayari updates appear here.",
+              text = strings.allCaughtUpAlerts,
               style = MaterialTheme.typography.bodyMedium,
               color = Color(0xFFD2C4EB),
               modifier = Modifier.padding(vertical = 24.dp),

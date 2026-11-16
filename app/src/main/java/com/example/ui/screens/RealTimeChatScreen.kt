@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +59,8 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.ChatMessage
 import com.example.model.PublicProfile
+import com.example.ui.components.UserAvatar
+import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.CrownGold
 import com.example.ui.theme.DarkSurface
@@ -82,6 +85,7 @@ fun RealTimeChatScreen(
   partner: PublicProfile,
   messages: List<ChatMessage>,
   isFollowingPartner: Boolean,
+  isSendingMessage: Boolean = false,
   isBlocked: Boolean = false,
   blockReason: String = "",
   onToggleFollowPartner: () -> Unit,
@@ -91,6 +95,7 @@ fun RealTimeChatScreen(
 ) {
   BackHandler { onBack() }
 
+  val strings = LocalAppStrings.current
   var draft by remember { mutableStateOf("") }
   val listState = rememberLazyListState()
 
@@ -121,75 +126,94 @@ fun RealTimeChatScreen(
               Brush.verticalGradient(colors = listOf(HeaderPurpleStart, HeaderPurpleEnd))
             ),
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          IconButton(
-            onClick = onBack,
-            modifier = Modifier.minimumInteractiveComponentSize().testTag("chat_back_button"),
+        Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
           ) {
-            Icon(
-              painter = painterResource(id = R.drawable.ic_arrow_back),
-              contentDescription = "Back",
-              tint = Color.White,
+            IconButton(
+              onClick = onBack,
+              modifier = Modifier.minimumInteractiveComponentSize().testTag("chat_back_button"),
+            ) {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_arrow_back),
+                contentDescription = strings.closeAction,
+                tint = Color.White,
+              )
+            }
+            UserAvatar(
+              photoUrl = partner.photoUrl,
+              displayName = partner.displayName,
+              size = 42.dp,
+              showOnlineDot = partner.isOnline,
             )
-          }
-          Box(
-            contentAlignment = Alignment.Center,
-            modifier =
-              Modifier.size(40.dp)
-                .background(
-                  Brush.linearGradient(colors = listOf(BadgePurple, NeonPink)),
-                  CircleShape,
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = partner.displayName.ifBlank { "Shayar Friend" },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text(
+                text =
+                  if (partner.city.isNotBlank()) {
+                    "${partner.effectiveHandle} • ${partner.city}"
+                  } else {
+                    partner.effectiveHandle
+                  },
+                style = MaterialTheme.typography.labelSmall,
+                color = CrownGold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+            Button(
+              onClick = onToggleFollowPartner,
+              shape = RoundedCornerShape(12.dp),
+              colors =
+                ButtonDefaults.buttonColors(
+                  containerColor = if (isFollowingPartner) DarkSurfaceVariant else NeonPink
                 ),
-          ) {
-            Text(
-              text = partner.displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "S",
-              color = Color.White,
-              fontWeight = FontWeight.Bold,
-              fontSize = 16.sp,
-            )
+              contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+              modifier = Modifier.minimumInteractiveComponentSize().testTag("chat_follow_button"),
+            ) {
+              Text(
+                text = if (isFollowingPartner) strings.followingAction else strings.followAction,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+              )
+            }
           }
-          Spacer(modifier = Modifier.width(10.dp))
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = partner.displayName.ifBlank { "Shayar Friend" },
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold,
-              color = Color.White,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-              text =
-                if (partner.city.isNotBlank()) {
-                  "${partner.effectiveHandle} • ${partner.city}"
-                } else {
-                  partner.effectiveHandle
-                },
-              style = MaterialTheme.typography.labelSmall,
-              color = CrownGold,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-          Button(
-            onClick = onToggleFollowPartner,
-            shape = RoundedCornerShape(12.dp),
-            colors =
-              ButtonDefaults.buttonColors(
-                containerColor = if (isFollowingPartner) DarkSurfaceVariant else NeonPink
-              ),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-            modifier = Modifier.minimumInteractiveComponentSize().testTag("chat_follow_button"),
+
+          Surface(
+            color = Color.Black.copy(alpha = 0.24f),
+            modifier = Modifier.fillMaxWidth(),
           ) {
-            Text(
-              text = if (isFollowingPartner) "Following" else "Follow",
-              color = Color.White,
-              fontSize = 12.sp,
-              fontWeight = FontWeight.SemiBold,
-            )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.Center,
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            ) {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_shield),
+                contentDescription = null,
+                tint = Color(0xFF4ADE80),
+                modifier = Modifier.size(13.dp),
+              )
+              Spacer(modifier = Modifier.width(6.dp))
+              Text(
+                text = strings.chatPrivateBadge,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFD9CCEE),
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
           }
         }
       }
@@ -208,10 +232,7 @@ fun RealTimeChatScreen(
               shape = RoundedCornerShape(12.dp),
             ) {
               Text(
-                text =
-                  blockReason.ifBlank {
-                    "Messaging has been restricted by Admin moderation."
-                  },
+                text = blockReason.ifBlank { strings.messagingDisabled },
                 style = MaterialTheme.typography.labelMedium,
                 color = Color(0xFFFFD4E0),
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -253,12 +274,7 @@ fun RealTimeChatScreen(
               maxLines = 3,
               placeholder = {
                 Text(
-                  text =
-                    if (isBlocked) {
-                      "Messaging disabled"
-                    } else {
-                      "Write a Shayari or message..."
-                    },
+                  text = if (isBlocked) strings.messagingDisabled else strings.writeMessageHint,
                   color = Color.White.copy(alpha = 0.6f),
                 )
               },
@@ -282,11 +298,11 @@ fun RealTimeChatScreen(
                 val toSend = draft
                 onSendMessage(toSend) { draft = "" }
               },
-              enabled = !isBlocked && draft.isNotBlank(),
+              enabled = !isBlocked && !isSendingMessage && draft.isNotBlank(),
               modifier =
                 Modifier.size(48.dp)
                   .background(
-                    if (!isBlocked && draft.isNotBlank()) {
+                    if (!isBlocked && !isSendingMessage && draft.isNotBlank()) {
                       Brush.linearGradient(colors = listOf(NeonPurple, NeonPink))
                     } else {
                       Brush.linearGradient(colors = listOf(DarkSurfaceVariant, DarkSurfaceVariant))
@@ -296,12 +312,20 @@ fun RealTimeChatScreen(
                   .minimumInteractiveComponentSize()
                   .testTag("chat_send_button"),
             ) {
-              Icon(
-                painter = painterResource(id = R.drawable.ic_send),
-                contentDescription = "Send Message",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp),
-              )
+              if (isSendingMessage) {
+                CircularProgressIndicator(
+                  color = CrownGold,
+                  strokeWidth = 2.dp,
+                  modifier = Modifier.size(18.dp),
+                )
+              } else {
+                Icon(
+                  painter = painterResource(id = R.drawable.ic_send),
+                  contentDescription = strings.chatAction,
+                  tint = Color.White,
+                  modifier = Modifier.size(20.dp),
+                )
+              }
             }
           }
         }
@@ -326,14 +350,14 @@ fun RealTimeChatScreen(
           )
           Spacer(modifier = Modifier.height(10.dp))
           Text(
-            text = "Say Namaste to ${partner.displayName}!",
+            text = "${strings.sayHelloPrefix} ${partner.displayName}!",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = Color.White,
           )
           Spacer(modifier = Modifier.height(4.dp))
           Text(
-            text = "Send your first Shayari text or emoji below.",
+            text = strings.chatEmptySubtitle,
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFFD2C4EB),
           )
@@ -349,6 +373,7 @@ fun RealTimeChatScreen(
             ChatMessageBubble(
               message = msg,
               isMine = msg.senderId == currentUserId,
+              nowLabel = strings.nowLabel,
             )
           }
         }
@@ -361,13 +386,14 @@ fun RealTimeChatScreen(
 private fun ChatMessageBubble(
   message: ChatMessage,
   isMine: Boolean,
+  nowLabel: String,
 ) {
   val timeText =
-    remember(message.createdAtMillis) {
+    remember(message.createdAtMillis, nowLabel) {
       if (message.createdAtMillis > 0L) {
         SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date(message.createdAtMillis))
       } else {
-        "Now"
+        nowLabel
       }
     }
 

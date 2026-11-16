@@ -1,7 +1,6 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,7 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -34,18 +36,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +52,8 @@ import com.example.model.ChatRoom
 import com.example.model.PublicProfile
 import com.example.ui.CommunityFilter
 import com.example.ui.SocialUiState
+import com.example.ui.components.UserAvatar
+import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgeBlue
 import com.example.ui.theme.BadgePink
 import com.example.ui.theme.BadgePurple
@@ -77,8 +75,12 @@ fun SocialCommunityScreen(
   onToggleLike: (PublicProfile) -> Unit,
   onOpenChatWith: (PublicProfile) -> Unit,
   onOpenChatRoom: (ChatRoom) -> Unit,
+  onCopyHandle: (String) -> Unit = {},
+  onRefreshDirectory: () -> Unit = {},
+  onShareInvite: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
+  val strings = LocalAppStrings.current
 
   Column(
     modifier = modifier.fillMaxSize(),
@@ -94,7 +96,7 @@ fun SocialCommunityScreen(
         singleLine = true,
         placeholder = {
           Text(
-            text = "Search by Name, City, or @SL ID...",
+            text = strings.searchFriendsHint,
             color = Color.White.copy(alpha = 0.65f),
           )
         },
@@ -105,6 +107,27 @@ fun SocialCommunityScreen(
             tint = CrownGold,
             modifier = Modifier.size(20.dp),
           )
+        },
+        trailingIcon = {
+          IconButton(
+            onClick = onRefreshDirectory,
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("community_refresh_button"),
+          ) {
+            if (uiState.isSearchingRemote || uiState.isBootstrapping) {
+              CircularProgressIndicator(
+                color = CrownGold,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(18.dp),
+              )
+            } else {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_refresh),
+                contentDescription = strings.refreshUsers,
+                tint = CrownGold,
+                modifier = Modifier.size(18.dp),
+              )
+            }
+          }
         },
         shape = RoundedCornerShape(16.dp),
         colors =
@@ -119,13 +142,22 @@ fun SocialCommunityScreen(
         modifier = Modifier.fillMaxWidth().testTag("community_search_input"),
       )
 
+      if (uiState.isSearchingRemote) {
+        Spacer(modifier = Modifier.height(6.dp))
+        LinearProgressIndicator(
+          color = CrownGold,
+          trackColor = DarkSurfaceVariant,
+          modifier = Modifier.fillMaxWidth().height(2.dp),
+        )
+      }
+
       LazyRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(vertical = 10.dp),
       ) {
         item {
           CommunityFilterChip(
-            label = "All Friends (${uiState.otherUsers.size})",
+            label = "${strings.filterAllFriends} (${uiState.otherUsers.size})",
             selected = uiState.communityFilter == CommunityFilter.ALL,
             testTag = "filter_all_friends",
             onClick = { onSelectFilter(CommunityFilter.ALL) },
@@ -133,7 +165,7 @@ fun SocialCommunityScreen(
         }
         item {
           CommunityFilterChip(
-            label = "Following (${uiState.followingIds.size})",
+            label = "${strings.filterFollowing} (${uiState.followingIds.size})",
             selected = uiState.communityFilter == CommunityFilter.FOLLOWING,
             testTag = "filter_following",
             onClick = { onSelectFilter(CommunityFilter.FOLLOWING) },
@@ -141,7 +173,7 @@ fun SocialCommunityScreen(
         }
         item {
           CommunityFilterChip(
-            label = "Chats (${uiState.chats.size})",
+            label = "${strings.filterChats} (${uiState.chats.size})",
             selected = uiState.communityFilter == CommunityFilter.CHATS,
             testTag = "filter_chats",
             onClick = { onSelectFilter(CommunityFilter.CHATS) },
@@ -164,9 +196,13 @@ fun SocialCommunityScreen(
         }
       if (filteredRooms.isEmpty()) {
         CommunityEmptyBox(
-          title = stringResource(R.string.empty_chats_title),
-          subtitle = stringResource(R.string.empty_chats_subtitle),
+          title = strings.emptyChatsTitle,
+          subtitle = strings.emptyChatsSubtitle,
           iconRes = R.drawable.ic_chat,
+          primaryCtaLabel = strings.refreshUsers,
+          onPrimaryCta = onRefreshDirectory,
+          secondaryCtaLabel = null,
+          onSecondaryCta = null,
         )
       } else {
         LazyColumn(
@@ -186,10 +222,21 @@ fun SocialCommunityScreen(
     } else {
       val users = uiState.filteredCommunityUsers
       if (users.isEmpty()) {
+        val isSearch = uiState.searchQuery.isNotBlank()
         CommunityEmptyBox(
-          title = stringResource(R.string.empty_community_title),
-          subtitle = stringResource(R.string.empty_community_subtitle),
+          title =
+            when {
+              uiState.isSearchingRemote || uiState.isBootstrapping -> strings.searchingUsers
+              isSearch -> strings.emptySearchFriendsTitle
+              else -> strings.emptyFriendsTitle
+            },
+          subtitle =
+            if (isSearch) strings.emptySearchFriendsSubtitle else strings.emptyFriendsSubtitle,
           iconRes = R.drawable.ic_community,
+          primaryCtaLabel = strings.refreshUsers,
+          onPrimaryCta = onRefreshDirectory,
+          secondaryCtaLabel = strings.inviteFriends,
+          onSecondaryCta = onShareInvite,
         )
       } else {
         LazyColumn(
@@ -203,6 +250,7 @@ fun SocialCommunityScreen(
               isFollowing = user.effectiveUid in uiState.followingIds,
               isLiked = user.effectiveUid in uiState.likedProfileIds,
               onCardClick = { onInspectProfile(user) },
+              onCopyHandle = { onCopyHandle(user.effectiveHandle) },
               onFollowClick = { onToggleFollow(user) },
               onLikeClick = { onToggleLike(user) },
               onChatClick = { onOpenChatWith(user) },
@@ -265,10 +313,12 @@ private fun FriendProfileCard(
   isFollowing: Boolean,
   isLiked: Boolean,
   onCardClick: () -> Unit,
+  onCopyHandle: () -> Unit,
   onFollowClick: () -> Unit,
   onLikeClick: () -> Unit,
   onChatClick: () -> Unit,
 ) {
+  val strings = LocalAppStrings.current
   Surface(
     shape = RoundedCornerShape(20.dp),
     color = DarkSurface.copy(alpha = 0.92f),
@@ -285,22 +335,12 @@ private fun FriendProfileCard(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth(),
       ) {
-        Box(
-          contentAlignment = Alignment.Center,
-          modifier =
-            Modifier.size(48.dp)
-              .background(
-                Brush.linearGradient(colors = listOf(BadgePurple, NeonPink)),
-                CircleShape,
-              ),
-        ) {
-          Text(
-            text = user.displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "S",
-            color = Color.White,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 18.sp,
-          )
-        }
+        UserAvatar(
+          photoUrl = user.photoUrl,
+          displayName = user.displayName,
+          size = 50.dp,
+          showOnlineDot = user.isOnline,
+        )
 
         Spacer(modifier = Modifier.width(12.dp))
 
@@ -320,6 +360,7 @@ private fun FriendProfileCard(
               shape = RoundedCornerShape(8.dp),
               color = DarkSurfaceVariant,
               border = BorderStroke(0.8.dp, CrownGold.copy(alpha = 0.55f)),
+              modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onCopyHandle),
             ) {
               Text(
                 text = user.effectiveHandle,
@@ -372,7 +413,7 @@ private fun FriendProfileCard(
         modifier = Modifier.fillMaxWidth(),
       ) {
         Text(
-          text = "${user.followersCount} Followers • ${user.effectiveLikesCount} Likes",
+          text = "${user.followersCount} ${strings.followersLabel} • ${user.effectiveLikesCount} ${strings.likesLabel}",
           style = MaterialTheme.typography.labelSmall,
           color = Color(0xFFD2C4EB),
           modifier = Modifier.weight(1f),
@@ -395,7 +436,7 @@ private fun FriendProfileCard(
               painterResource(
                 id = if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart
               ),
-            contentDescription = "Like profile",
+            contentDescription = strings.likesLabel,
             tint = if (isLiked) NeonPink else Color.White,
             modifier = Modifier.size(16.dp),
           )
@@ -414,7 +455,7 @@ private fun FriendProfileCard(
             Modifier.minimumInteractiveComponentSize().testTag("follow_user_${user.effectiveUid}"),
         ) {
           Text(
-            text = if (isFollowing) "Following" else "Follow",
+            text = if (isFollowing) strings.followingAction else strings.followAction,
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
           )
@@ -434,12 +475,12 @@ private fun FriendProfileCard(
         ) {
           Icon(
             painter = painterResource(id = R.drawable.ic_chat),
-            contentDescription = "Chat",
+            contentDescription = strings.chatAction,
             tint = Color.White,
             modifier = Modifier.size(15.dp),
           )
           Spacer(modifier = Modifier.width(4.dp))
-          Text("Chat", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+          Text(strings.chatAction, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
       }
     }
@@ -451,6 +492,7 @@ fun ChatThreadPreviewCard(
   room: ChatRoom,
   onClick: () -> Unit,
 ) {
+  val strings = LocalAppStrings.current
   val partnerName = room.partnerName.ifBlank { "Shayar Friend" }
   val partnerHandle = room.partnerHandle.ifBlank { "@SL_USER" }
 
@@ -469,22 +511,12 @@ fun ChatThreadPreviewCard(
       modifier = Modifier.padding(14.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Box(
-        contentAlignment = Alignment.Center,
-        modifier =
-          Modifier.size(46.dp)
-            .background(
-              Brush.linearGradient(colors = listOf(BadgeBlue, NeonPurple)),
-              CircleShape,
-            ),
-      ) {
-        Text(
-          text = partnerName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "C",
-          color = Color.White,
-          fontWeight = FontWeight.Bold,
-          fontSize = 17.sp,
-        )
-      }
+      UserAvatar(
+        photoUrl = room.partnerPhotoUrl,
+        displayName = partnerName,
+        size = 46.dp,
+        gradientColors = listOf(BadgeBlue, NeonPurple),
+      )
       Spacer(modifier = Modifier.width(12.dp))
       Column(modifier = Modifier.weight(1f)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -505,7 +537,7 @@ fun ChatThreadPreviewCard(
         }
         Spacer(modifier = Modifier.height(3.dp))
         Text(
-          text = room.lastMessage.ifBlank { "Tap to open chat" },
+          text = room.lastMessage.ifBlank { strings.tapToOpenChat },
           style = MaterialTheme.typography.bodySmall,
           color = Color(0xFFD2C4EB),
           maxLines = 1,
@@ -514,15 +546,13 @@ fun ChatThreadPreviewCard(
       }
       Icon(
         painter = painterResource(id = R.drawable.ic_chat),
-        contentDescription = "Open Chat",
+        contentDescription = strings.chatAction,
         tint = CrownGold,
         modifier = Modifier.size(20.dp),
       )
     }
   }
 }
-
-
 
 @Composable
 private fun UserProfileDetailDialog(
@@ -534,6 +564,7 @@ private fun UserProfileDetailDialog(
   onToggleLike: () -> Unit,
   onStartChat: () -> Unit,
 ) {
+  val strings = LocalAppStrings.current
   AlertDialog(
     onDismissRequest = onDismiss,
     containerColor = DarkSurface,
@@ -543,22 +574,13 @@ private fun UserProfileDetailDialog(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth(),
       ) {
-        Box(
-          contentAlignment = Alignment.Center,
-          modifier =
-            Modifier.size(60.dp)
-              .background(
-                Brush.linearGradient(colors = listOf(BadgePurple, NeonPink)),
-                CircleShape,
-              ),
-        ) {
-          Text(
-            text = user.displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "S",
-            color = Color.White,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 22.sp,
-          )
-        }
+        UserAvatar(
+          photoUrl = user.photoUrl,
+          displayName = user.displayName,
+          size = 64.dp,
+          initialFontSize = 24.sp,
+          showOnlineDot = user.isOnline,
+        )
         Spacer(modifier = Modifier.height(10.dp))
         Text(
           text = user.displayName.ifBlank { "Shayari Lover" },
@@ -595,9 +617,9 @@ private fun UserProfileDetailDialog(
           modifier = Modifier.fillMaxWidth(),
           horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-          ProfileStatColumn(label = "Followers", count = user.followersCount)
-          ProfileStatColumn(label = "Following", count = user.followingCount)
-          ProfileStatColumn(label = "Likes", count = user.effectiveLikesCount)
+          ProfileStatColumn(label = strings.followersLabel, count = user.followersCount)
+          ProfileStatColumn(label = strings.followingLabel, count = user.followingCount)
+          ProfileStatColumn(label = strings.likesLabel, count = user.effectiveLikesCount)
         }
       }
     },
@@ -617,7 +639,7 @@ private fun UserProfileDetailDialog(
               painterResource(
                 id = if (isLiked) R.drawable.ic_heart_filled else R.drawable.ic_heart
               ),
-            contentDescription = "Like profile",
+            contentDescription = strings.likesLabel,
             tint = if (isLiked) NeonPink else Color.White,
             modifier = Modifier.size(16.dp),
           )
@@ -631,7 +653,7 @@ private fun UserProfileDetailDialog(
             ),
           modifier = Modifier.weight(1f).minimumInteractiveComponentSize(),
         ) {
-          Text(if (isFollowing) "Following" else "Follow", color = Color.White)
+          Text(if (isFollowing) strings.followingAction else strings.followAction, color = Color.White)
         }
         Button(
           onClick = onStartChat,
@@ -639,13 +661,13 @@ private fun UserProfileDetailDialog(
           colors = ButtonDefaults.buttonColors(containerColor = BadgePink),
           modifier = Modifier.weight(1f).minimumInteractiveComponentSize(),
         ) {
-          Text("Chat", color = Color.White)
+          Text(strings.chatAction, color = Color.White)
         }
       }
     },
     dismissButton = {
       TextButton(onClick = onDismiss) {
-        Text("Close", color = Color(0xFFD2C4EB))
+        Text(strings.closeAction, color = Color(0xFFD2C4EB))
       }
     },
   )
@@ -669,6 +691,10 @@ private fun CommunityEmptyBox(
   title: String,
   subtitle: String,
   iconRes: Int,
+  primaryCtaLabel: String,
+  onPrimaryCta: () -> Unit,
+  secondaryCtaLabel: String?,
+  onSecondaryCta: (() -> Unit)?,
 ) {
   Column(
     modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -703,7 +729,42 @@ private fun CommunityEmptyBox(
       style = MaterialTheme.typography.bodyMedium,
       color = Color(0xFFD2C4EB),
       textAlign = TextAlign.Center,
-      modifier = Modifier.widthIn(max = 300.dp),
+      modifier = Modifier.widthIn(max = 320.dp),
     )
+    Spacer(modifier = Modifier.height(18.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+      Button(
+        onClick = onPrimaryCta,
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = BadgePurple),
+        modifier = Modifier.minimumInteractiveComponentSize().testTag("empty_refresh_users_button"),
+      ) {
+        Icon(
+          painter = painterResource(id = R.drawable.ic_refresh),
+          contentDescription = null,
+          tint = Color.White,
+          modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(primaryCtaLabel, color = Color.White, fontWeight = FontWeight.SemiBold)
+      }
+      if (secondaryCtaLabel != null && onSecondaryCta != null) {
+        OutlinedButton(
+          onClick = onSecondaryCta,
+          shape = RoundedCornerShape(14.dp),
+          border = BorderStroke(1.dp, CrownGold.copy(alpha = 0.65f)),
+          modifier = Modifier.minimumInteractiveComponentSize().testTag("empty_invite_friends_button"),
+        ) {
+          Icon(
+            painter = painterResource(id = R.drawable.ic_share),
+            contentDescription = null,
+            tint = CrownGold,
+            modifier = Modifier.size(16.dp),
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(secondaryCtaLabel, color = CrownGold, fontWeight = FontWeight.SemiBold)
+        }
+      }
+    }
   }
 }

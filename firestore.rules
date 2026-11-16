@@ -1,0 +1,180 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidPrivateUser(data, uid) {
+      return (!('uid' in data) || data.uid == uid)
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 80))
+        && (!('email' in data) || (data.email is string && data.email.size() <= 180))
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 260000))
+        && (!('address' in data) || (data.address is string && data.address.size() <= 200))
+        && (!('handle' in data) || (data.handle is string && data.handle.size() <= 40))
+        && (!('username' in data) || (data.username is string && data.username.size() <= 40))
+        && (!('selectedLanguage' in data) || data.selectedLanguage is string)
+        && (!('adultContentEnabled' in data) || data.adultContentEnabled is bool)
+        && (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time))
+        && (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time));
+    }
+
+    function isValidPublicProfileWrite(data, uid) {
+      return (!('uid' in data) || data.uid == uid)
+        && (!('userId' in data) || data.userId == uid)
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80))
+        && (!('handle' in data) || (data.handle is string && data.handle.size() >= 2 && data.handle.size() <= 40))
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 260000))
+        && (!('city' in data) || (data.city is string && data.city.size() <= 100))
+        && (!('bio' in data) || (data.bio is string && data.bio.size() <= 250))
+        && (!('followersCount' in data) || data.followersCount is int)
+        && (!('followingCount' in data) || data.followingCount is int)
+        && (!('likesReceivedCount' in data) || data.likesReceivedCount is int)
+        && (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isSocialCounterOnlyUpdate(oldData, newData) {
+      return newData.diff(oldData).affectedKeys().hasOnly(['followersCount', 'likesReceivedCount', 'updatedAt'])
+        && (!('followersCount' in newData) || newData.followersCount is int)
+        && (!('likesReceivedCount' in newData) || newData.likesReceivedCount is int);
+    }
+
+    function isValidChatRoom(data) {
+      return data.participantIds is list
+        && data.participantIds.size() == 2
+        && request.auth.uid in data.participantIds
+        && (!('lastMessage' in data) || (data.lastMessage is string && data.lastMessage.size() <= 1000))
+        && (!('lastSenderId' in data) || data.lastSenderId is string)
+        && (!('updatedAt' in data) || (data.updatedAt is timestamp && data.updatedAt <= request.time));
+    }
+
+    function isValidChatMessage(data) {
+      return data.senderId == request.auth.uid
+        && data.participantIds is list
+        && data.participantIds.size() == 2
+        && request.auth.uid in data.participantIds
+        && data.receiverId is string
+        && data.receiverId != request.auth.uid
+        && data.receiverId in data.participantIds
+        && data.text is string
+        && data.text.size() >= 1
+        && data.text.size() <= 1000
+        && (!('createdAt' in data) || (data.createdAt is timestamp && data.createdAt <= request.time));
+    }
+
+    function isRoomParticipant(roomId) {
+      return exists(/databases/$(database)/documents/chatRooms/$(roomId))
+        && request.auth.uid in get(/databases/$(database)/documents/chatRooms/$(roomId)).data.participantIds;
+    }
+
+    function isRoomParticipantAfter(roomId) {
+      return existsAfter(/databases/$(database)/documents/chatRooms/$(roomId))
+        && request.auth.uid in getAfter(/databases/$(database)/documents/chatRooms/$(roomId)).data.participantIds;
+    }
+
+    // 1. Private user account + preferences (strictly owner-only)
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && isValidPrivateUser(request.resource.data, uid);
+      allow delete: if isOwner(uid);
+    }
+
+    // 2. Discoverable Shayar profiles + owner subcollections
+    match /appUsers/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(uid) && isValidPublicProfileWrite(request.resource.data, uid);
+      allow update: if (isOwner(uid) && isValidPublicProfileWrite(request.resource.data, uid))
+        || (isSignedIn() && isSocialCounterOnlyUpdate(resource.data, request.resource.data));
+      allow delete: if isOwner(uid);
+
+      match /following/{targetUid} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isOwner(uid);
+      }
+
+      match /likes/{targetUid} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isOwner(uid);
+      }
+
+      match /notifications/{notifId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isSignedIn()
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.recipientId == uid;
+        allow update: if isOwner(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+          && request.resource.data.isRead is bool;
+      }
+    }
+
+    // 3. Follow & Like social edges (actorId == request.auth.uid)
+    match /socialEdges/{edgeId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.data.actorId == request.auth.uid
+        && request.resource.data.targetId is string
+        && request.resource.data.type in ['follow', 'like'];
+      allow delete: if isSignedIn()
+        && resource.data.actorId == request.auth.uid;
+    }
+
+    // 4. Strictly Private 1-on-1 Chat Rooms & Messages
+    match /chatRooms/{roomId} {
+      allow get: if isSignedIn()
+        && (resource == null || request.auth.uid in resource.data.participantIds);
+
+      allow list: if isSignedIn()
+        && request.auth.uid in resource.data.participantIds;
+
+      allow create: if isSignedIn() && isValidChatRoom(request.resource.data);
+
+      allow update: if isSignedIn()
+        && request.auth.uid in resource.data.participantIds
+        && request.resource.data.participantIds == resource.data.participantIds
+        && isValidChatRoom(request.resource.data);
+
+      match /messages/{msgId} {
+        allow read: if isSignedIn() && isRoomParticipant(roomId);
+
+        allow create: if isSignedIn()
+          && isValidChatMessage(request.resource.data)
+          && isRoomParticipantAfter(roomId);
+
+        allow update: if isSignedIn()
+          && request.auth.uid == resource.data.receiverId
+          && request.auth.uid in resource.data.participantIds
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])
+          && request.resource.data.isRead is bool;
+      }
+    }
+
+    // 5. Public/Authenticated Live Shayari Feed, Config, Polls & Categories
+    match /publicSites/{siteId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /appConfig/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /shayaris/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /pollVotes/{voteId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.pollId is string
+        && request.resource.data.optionId is string;
+    }
+  }
+}

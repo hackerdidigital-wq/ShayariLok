@@ -1,0 +1,167 @@
+{
+  "entities": {
+    "PrivateUserAccount": {
+      "title": "PrivateUserAccount",
+      "description": "Private Google user record, address, and app preferences",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "handle": { "type": "string" },
+        "username": { "type": "string" },
+        "address": { "type": "string" },
+        "selectedLanguage": { "type": "string" },
+        "adultContentEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName"]
+    },
+    "PublicProfile": {
+      "title": "PublicProfile",
+      "description": "Discoverable Shayar profile used in Friends directory, Follow/Like, and Chat",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "displayNameLower": { "type": "string" },
+        "handle": { "type": "string" },
+        "handleLower": { "type": "string" },
+        "username": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "city": { "type": "string" },
+        "bio": { "type": "string" },
+        "isOnline": { "type": "boolean" },
+        "isBlocked": { "type": "boolean" },
+        "blockReason": { "type": "string" },
+        "followersCount": { "type": "integer" },
+        "followingCount": { "type": "integer" },
+        "likesReceivedCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "handle"]
+    },
+    "SocialEdge": {
+      "title": "SocialEdge",
+      "description": "Follow or like edge created by an authenticated user",
+      "type": "object",
+      "properties": {
+        "actorId": { "type": "string" },
+        "targetId": { "type": "string" },
+        "actorName": { "type": "string" },
+        "targetName": { "type": "string" },
+        "type": { "type": "string", "enum": ["follow", "like"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["actorId", "targetId", "type"]
+    },
+    "SocialNotification": {
+      "title": "SocialNotification",
+      "description": "In-app social alert for new chat messages, followers, and profile likes",
+      "type": "object",
+      "properties": {
+        "recipientId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderHandle": { "type": "string" },
+        "senderName": { "type": "string" },
+        "type": { "type": "string", "enum": ["message", "follow", "like"] },
+        "previewText": { "type": "string" },
+        "chatId": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientId", "senderId", "type", "isRead"]
+    },
+    "ChatRoom": {
+      "title": "ChatRoom",
+      "description": "Strictly private 1-on-1 chat room metadata for two participants",
+      "type": "object",
+      "properties": {
+        "participantIds": { "type": "array" },
+        "participantNames": { "type": "array" },
+        "participantHandles": { "type": "object" },
+        "participantDisplayNames": { "type": "object" },
+        "participantPhotos": { "type": "object" },
+        "lastMessage": { "type": "string" },
+        "lastSenderId": { "type": "string" },
+        "messageCount": { "type": "integer" },
+        "flaggedSpam": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["participantIds", "lastSenderId"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Private 1-on-1 message scoped strictly to sender and receiver",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string" },
+        "participantIds": { "type": "array" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderHandle": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "text": { "type": "string" },
+        "isRead": { "type": "boolean" },
+        "isFlagged": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "participantIds", "senderId", "receiverId", "text"]
+    },
+    "PollVote": {
+      "title": "PollVote",
+      "description": "Authenticated user's vote in a live Shayari poll",
+      "type": "object",
+      "properties": {
+        "pollId": { "type": "string" },
+        "optionId": { "type": "string" },
+        "uid": { "type": "string" },
+        "siteDocId": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["pollId", "optionId", "uid"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/PrivateUserAccount" },
+      "description": "Owner-only user account and saved preferences"
+    },
+    "/appUsers/{uid}": {
+      "schema": { "$ref": "#/entities/PublicProfile" },
+      "description": "Authenticated-readable Shayar public directory"
+    },
+    "/appUsers/{uid}/following/{targetUid}": {
+      "schema": "object",
+      "description": "Owner follow targets"
+    },
+    "/appUsers/{uid}/likes/{targetUid}": {
+      "schema": "object",
+      "description": "Owner liked profile targets"
+    },
+    "/appUsers/{uid}/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/SocialNotification" },
+      "description": "Notifications targeted to uid"
+    },
+    "/socialEdges/{edgeId}": {
+      "schema": { "$ref": "#/entities/SocialEdge" },
+      "description": "Follow and like social edges"
+    },
+    "/chatRooms/{roomId}": {
+      "schema": { "$ref": "#/entities/ChatRoom" },
+      "description": "Private 1-on-1 chat rooms"
+    },
+    "/chatRooms/{roomId}/messages/{msgId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Private 1-on-1 chat messages"
+    },
+    "/pollVotes/{voteId}": {
+      "schema": { "$ref": "#/entities/PollVote" },
+      "description": "User poll votes"
+    }
+  }
+}

@@ -485,4 +485,93 @@ class ExampleRobolectricTest {
       )
     assertEquals(null, com.example.data.GoogleAuthHelper.classifyCancellationDiagnostic(manualCancel))
   }
+
+  @Test
+  fun `AppStrings dynamically resolves Hindi, English, and Urdu translations with category labels`() {
+    val en = com.example.ui.i18n.appStringsFor("en")
+    val hi = com.example.ui.i18n.appStringsFor("hi")
+    val ur = com.example.ui.i18n.appStringsFor("ur")
+
+    assertEquals("Home", en.tabHome)
+    assertEquals("Now", en.nowLabel)
+    assertEquals("Love", en.categoryLabel("Love"))
+
+    assertEquals("होम", hi.tabHome)
+    assertEquals("अभी", hi.nowLabel)
+    assertEquals("प्यार", hi.categoryLabel("Love"))
+
+    assertEquals("ہوم", ur.tabHome)
+    assertEquals("ابھی", ur.nowLabel)
+    assertEquals("محبت", ur.categoryLabel("Love"))
+  }
+
+  @Test
+  fun `18+ Safe Mode hides adult shayari and categories until verified and toggled ON`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    setNetworkOffline(app)
+    val prefs = app.getSharedPreferences("shayari_lok_prefs", Context.MODE_PRIVATE)
+    prefs.edit()
+      .putString(
+        "cached_config_json",
+        """
+        {
+          "app_name": "Shayari Lok",
+          "latest_version_code": 1,
+          "maintenance_mode": false,
+          "categories": ["All", "Love", "18+ Mature"],
+          "shayari_list": [
+            { "id": 1, "category": "Love", "text": "Clean Shayari", "is_adult": false },
+            { "id": 2, "category": "18+ Mature", "text": "Bold 18+ Shayari", "is_adult": true }
+          ]
+        }
+        """.trimIndent(),
+      )
+      .commit()
+
+    val viewModel = ShayariViewModel(app)
+    val safeReady = viewModel.uiState.value.screenState as ShayariScreenState.Ready
+    assertFalse(safeReady.allowAdultContent)
+    assertEquals(listOf("All", "Love"), safeReady.visibleCategories)
+    assertEquals(1, safeReady.hiddenAdultCount)
+    assertEquals(listOf("Clean Shayari"), safeReady.visibleShayaris.map { it.text })
+
+    viewModel.setAdultContentAllowed(true)
+    val unlockedReady = viewModel.uiState.value.screenState as ShayariScreenState.Ready
+    assertTrue(unlockedReady.allowAdultContent)
+    assertEquals(listOf("All", "Love", "18+ Mature"), unlockedReady.visibleCategories)
+    assertEquals(0, unlockedReady.hiddenAdultCount)
+    assertEquals(2, unlockedReady.visibleShayaris.size)
+  }
+
+  @Test
+  fun `PublicProfile matchesQuery supports @-agnostic handles, case-insensitive names, and cities`() {
+    val shayar =
+      com.example.model.PublicProfile(
+        id = "uid_1234",
+        uid = "uid_1234",
+        handle = "@SL_9042",
+        displayName = "Aarav Verma",
+        city = "Jaipur",
+      )
+
+    assertTrue(shayar.matchesQuery("sl_9042"))
+    assertTrue(shayar.matchesQuery("@SL_9042"))
+    assertTrue(shayar.matchesQuery("aarav"))
+    assertTrue(shayar.matchesQuery("JAIPUR"))
+    assertFalse(shayar.matchesQuery("@SL_9999"))
+  }
+
+  @Test
+  fun `ImageUploadHelper encodes bitmap to compact Data URI under Firestore limits`() {
+    val bmp =
+      android.graphics.Bitmap.createBitmap(
+        512,
+        384,
+        android.graphics.Bitmap.Config.ARGB_8888,
+      )
+    bmp.eraseColor(android.graphics.Color.MAGENTA)
+    val dataUri = com.example.data.ImageUploadHelper.encodeBitmapToAvatarDataUri(bmp)
+    assertTrue(dataUri.startsWith("data:image/jpeg;base64,"))
+    assertTrue(dataUri.length <= 165_000)
+  }
 }

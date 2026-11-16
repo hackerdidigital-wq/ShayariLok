@@ -58,6 +58,7 @@ import com.example.R
 import com.example.data.ShayariTextSize
 import com.example.data.rememberShayariImageBitmap
 import com.example.model.ShayariItem
+import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.CrownGold
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
@@ -76,6 +77,7 @@ fun ShayariCard(
   onFavoriteToggle: (Int) -> Unit,
   modifier: Modifier = Modifier,
 ) {
+  val strings = LocalAppStrings.current
   var justCopied by remember(item.id) { mutableStateOf(false) }
 
   // Smooth entrance animation per card
@@ -238,20 +240,41 @@ fun ShayariCard(
         modifier = Modifier.weight(1f),
         verticalArrangement = Arrangement.Top,
       ) {
-        Surface(
-          shape = RoundedCornerShape(50),
-          color = NeonPurple.copy(alpha = 0.28f),
-          border = BorderStroke(0.8.dp, NeonVioletGlow.copy(alpha = 0.5f)),
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-          Text(
-            text = item.category,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = Color(0xFFEBD8FF),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
-          )
+          Surface(
+            shape = RoundedCornerShape(50),
+            color = NeonPurple.copy(alpha = 0.28f),
+            border = BorderStroke(0.8.dp, NeonVioletGlow.copy(alpha = 0.5f)),
+          ) {
+            Text(
+              text = strings.categoryLabel(item.category),
+              style = MaterialTheme.typography.labelSmall,
+              fontWeight = FontWeight.SemiBold,
+              color = Color(0xFFEBD8FF),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+            )
+          }
+          if (item.isAdult) {
+            Surface(
+              shape = RoundedCornerShape(50),
+              color = NeonPink.copy(alpha = 0.24f),
+              border = BorderStroke(0.8.dp, NeonPink.copy(alpha = 0.65f)),
+            ) {
+              Text(
+                text = strings.adultBadge18Plus,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFFFD0E3),
+                maxLines = 1,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+              )
+            }
+          }
         }
 
         Spacer(modifier = Modifier.height(7.dp))
@@ -289,7 +312,7 @@ fun ShayariCard(
           if (whatsappShareEnabled) {
             CardIconAction(
               iconRes = R.drawable.ic_whatsapp,
-              contentDescription = stringResource(R.string.action_whatsapp_share),
+              contentDescription = strings.actionWhatsApp,
               tint = Color(0xFF4ADE80),
               iconScale = 1f,
               testTag = "whatsapp_button_${item.id}",
@@ -298,7 +321,7 @@ fun ShayariCard(
           }
           CardIconAction(
             iconRes = R.drawable.ic_share,
-            contentDescription = stringResource(R.string.action_share),
+            contentDescription = strings.actionShare,
             tint = Color.White.copy(alpha = 0.88f),
             iconScale = 1f,
             testTag = "share_button_${item.id}",
@@ -306,7 +329,7 @@ fun ShayariCard(
           )
           CardIconAction(
             iconRes = if (isFavorite) R.drawable.ic_heart_filled else R.drawable.ic_heart,
-            contentDescription = stringResource(R.string.action_favorite),
+            contentDescription = strings.actionFavorite,
             tint = heartColor,
             iconScale = heartScale,
             testTag = "favorite_button_${item.id}",
@@ -373,16 +396,16 @@ private fun SmartCopyPillButton(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
       ) {
+        val strings = LocalAppStrings.current
         Icon(
           painter = painterResource(id = if (justCopied) R.drawable.ic_check else R.drawable.ic_copy),
-          contentDescription = stringResource(R.string.action_copy),
+          contentDescription = strings.actionCopy,
           tint = contentColor,
           modifier = Modifier.size(14.dp),
         )
         Spacer(modifier = Modifier.width(5.dp))
         Text(
-          text =
-            stringResource(if (justCopied) R.string.action_copied else R.string.action_copy),
+          text = if (justCopied) strings.actionCopied else strings.actionCopy,
           style = MaterialTheme.typography.labelSmall,
           fontWeight = FontWeight.SemiBold,
           color = contentColor,
