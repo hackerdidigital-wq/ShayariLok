@@ -283,6 +283,14 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
               selectedCountryCode = uiState.selectedCountryCode,
               dailyStreakDays = uiState.dailyStreakDays,
               votedPollOptions = uiState.votedPollOptions,
+              myProfile = socialState.myProfile,
+              userEmail = socialState.userEmail,
+              onSignOutClick = {
+                GoogleAuthHelper.signOut(
+                  credentialManager = credentialManager,
+                  scope = coroutineScope,
+                )
+              },
               onSelectCategory = viewModel::selectCategory,
               onSelectTab = viewModel::selectTab,
               onToggleSearch = viewModel::toggleSearchVisibility,

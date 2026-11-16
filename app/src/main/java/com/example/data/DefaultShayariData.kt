@@ -81,7 +81,7 @@ object DefaultShayariData {
           "id": 5,
           "category": "Love",
           "text": "Kabhi lafzon mein na dhoondhna wafa meri,\nKhamoshiyon mein bhi sirf tera hi naam likha hai.",
-          "author": "Aarav"
+          "author": "Shayari Lok"
         }
       ]
     }

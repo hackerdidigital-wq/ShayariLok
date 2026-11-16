@@ -49,12 +49,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedButton
@@ -68,10 +71,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,10 +92,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.ShayariTextSize
+import com.example.model.PublicProfile
 import com.example.model.ShayariItem
 import com.example.ui.MainTab
 import com.example.ui.ShayariScreenState
@@ -98,10 +105,14 @@ import com.example.ui.components.DailyStreakAndLocaleBar
 import com.example.ui.components.LanguageCountrySelectorDialog
 import com.example.ui.components.LivePollCard
 import com.example.ui.components.ShayariCard
+import com.example.ui.components.UserAvatar
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.CrownGold
+import com.example.ui.theme.DarkSurface
+import com.example.ui.theme.DarkSurfaceVariant
 import com.example.ui.theme.DeepRoyalPurple
+import kotlinx.coroutines.launch
 import com.example.ui.theme.HeaderPurpleEnd
 import com.example.ui.theme.HeaderPurpleStart
 import com.example.ui.theme.MidnightIndigo
@@ -126,6 +137,9 @@ fun HomeScreen(
   selectedCountryCode: String = "IN",
   dailyStreakDays: Int = 1,
   votedPollOptions: Map<String, String> = emptyMap(),
+  myProfile: PublicProfile? = null,
+  userEmail: String = "",
+  onSignOutClick: () -> Unit = {},
   onSelectCategory: (String) -> Unit,
   onSelectTab: (MainTab) -> Unit,
   onToggleSearch: () -> Unit,
@@ -146,18 +160,19 @@ fun HomeScreen(
   socialTabContent: @Composable (tab: MainTab, openLocalePicker: () -> Unit) -> Unit,
 ) {
   val strings = LocalAppStrings.current
-  var isMenuExpanded by remember { mutableStateOf(false) }
+  val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+  val coroutineScope = rememberCoroutineScope()
   var showLocaleDialog by remember { mutableStateOf(false) }
   var showAgeConfirmDialog by remember { mutableStateOf(false) }
 
-  BackHandler(enabled = isMenuExpanded) {
-    isMenuExpanded = false
+  BackHandler(enabled = drawerState.isOpen) {
+    coroutineScope.launch { drawerState.close() }
   }
-  BackHandler(enabled = !isMenuExpanded && isSearchVisible) {
+  BackHandler(enabled = !drawerState.isOpen && isSearchVisible) {
     onToggleSearch()
   }
   BackHandler(
-    enabled = !isMenuExpanded && !isSearchVisible && readyState.activeTab != MainTab.EXPLORE
+    enabled = !drawerState.isOpen && !isSearchVisible && readyState.activeTab != MainTab.EXPLORE
   ) {
     onSelectTab(MainTab.EXPLORE)
   }
@@ -186,6 +201,57 @@ fun HomeScreen(
       label = "crownGlowAlpha",
     )
 
+  ModalNavigationDrawer(
+    drawerState = drawerState,
+    gesturesEnabled = true,
+    scrimColor = Color.Black.copy(alpha = 0.65f),
+    drawerContent = {
+      ShayariSideDrawerSheet(
+        appName = readyState.config.appName,
+        socialLink = readyState.config.socialLink,
+        activeTab = readyState.activeTab,
+        myProfile = myProfile,
+        userEmail = userEmail,
+        unreadNotificationCount = unreadNotificationCount,
+        isRefreshing = isRefreshing,
+        selectedLanguageCode = selectedLanguageCode,
+        selectedCountryCode = selectedCountryCode,
+        onCloseDrawer = { coroutineScope.launch { drawerState.close() } },
+        onSelectTab = { tab ->
+          coroutineScope.launch { drawerState.close() }
+          onSelectTab(tab)
+        },
+        onNotificationsClick = {
+          coroutineScope.launch { drawerState.close() }
+          onNotificationsClick()
+        },
+        onRefreshClick = {
+          coroutineScope.launch { drawerState.close() }
+          onRefreshClick()
+        },
+        onOpenLocaleClick = {
+          coroutineScope.launch { drawerState.close() }
+          showLocaleDialog = true
+        },
+        onSettingsClick = {
+          coroutineScope.launch { drawerState.close() }
+          onSettingsClick()
+        },
+        onShareAppClick = {
+          coroutineScope.launch { drawerState.close() }
+          onShareAppClick()
+        },
+        onOpenCommunityClick = { url ->
+          coroutineScope.launch { drawerState.close() }
+          onOpenCommunityClick(url)
+        },
+        onSignOutClick = {
+          coroutineScope.launch { drawerState.close() }
+          onSignOutClick()
+        },
+      )
+    },
+  ) {
   BoxWithConstraints(
     modifier =
       Modifier.fillMaxSize()
@@ -273,126 +339,13 @@ fun HomeScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
           ) {
-            // Compact App Menu with ONLY non-duplicated useful actions
-            Box {
-              HeaderIconButton(
-                iconRes = R.drawable.ic_menu,
-                contentDescription = "Open menu",
-                tint = Color.White,
-                testTag = "menu_button",
-                onClick = { isMenuExpanded = true },
-              )
-
-              DropdownMenu(
-                expanded = isMenuExpanded,
-                onDismissRequest = { isMenuExpanded = false },
-                containerColor = Color.White,
-              ) {
-                DropdownMenuItem(
-                  text = {
-                    Text(
-                      text = if (isRefreshing) strings.menuSyncing else strings.menuSync,
-                      color = Color(0xFF1D0D36),
-                    )
-                  },
-                  leadingIcon = {
-                    Icon(
-                      painter = painterResource(id = R.drawable.ic_refresh),
-                      contentDescription = null,
-                      tint = BadgePurple,
-                      modifier = Modifier.size(20.dp),
-                    )
-                  },
-                  enabled = !isRefreshing,
-                  onClick = {
-                    isMenuExpanded = false
-                    onRefreshClick()
-                  },
-                  modifier = Modifier.testTag("menu_sync_item"),
-                )
-                DropdownMenuItem(
-                  text = { Text(strings.menuShareApp, color = Color(0xFF1D0D36)) },
-                  leadingIcon = {
-                    Icon(
-                      painter = painterResource(id = R.drawable.ic_share),
-                      contentDescription = null,
-                      tint = BadgePurple,
-                      modifier = Modifier.size(20.dp),
-                    )
-                  },
-                  onClick = {
-                    isMenuExpanded = false
-                    onShareAppClick()
-                  },
-                  modifier = Modifier.testTag("menu_share_app_item"),
-                )
-                if (readyState.config.socialLink.isNotBlank()) {
-                  DropdownMenuItem(
-                    text = {
-                      Text(
-                        text = strings.menuJoinCommunity,
-                        color = Color(0xFF1D0D36),
-                      )
-                    },
-                    leadingIcon = {
-                      Icon(
-                        painter = painterResource(id = R.drawable.ic_open_in_new),
-                        contentDescription = null,
-                        tint = BadgePurple,
-                        modifier = Modifier.size(20.dp),
-                      )
-                    },
-                    onClick = {
-                      isMenuExpanded = false
-                      onOpenCommunityClick(readyState.config.socialLink)
-                    },
-                    modifier = Modifier.testTag("menu_community_item"),
-                  )
-                }
-                DropdownMenuItem(
-                  text = {
-                    Text(
-                      text = strings.menuLanguageRegion,
-                      color = Color(0xFF1D0D36),
-                    )
-                  },
-                  leadingIcon = {
-                    Icon(
-                      painter = painterResource(id = R.drawable.ic_language),
-                      contentDescription = null,
-                      tint = BadgePurple,
-                      modifier = Modifier.size(20.dp),
-                    )
-                  },
-                  onClick = {
-                    isMenuExpanded = false
-                    showLocaleDialog = true
-                  },
-                  modifier = Modifier.testTag("menu_locale_item"),
-                )
-                DropdownMenuItem(
-                  text = {
-                    Text(
-                      text = strings.menuSettings,
-                      color = Color(0xFF1D0D36),
-                    )
-                  },
-                  leadingIcon = {
-                    Icon(
-                      painter = painterResource(id = R.drawable.ic_settings),
-                      contentDescription = null,
-                      tint = BadgePurple,
-                      modifier = Modifier.size(20.dp),
-                    )
-                  },
-                  onClick = {
-                    isMenuExpanded = false
-                    onSettingsClick()
-                  },
-                  modifier = Modifier.testTag("menu_settings_item"),
-                )
-              }
-            }
+            HeaderIconButton(
+              iconRes = R.drawable.ic_menu,
+              contentDescription = "Open navigation drawer",
+              tint = Color.White,
+              testTag = "menu_button",
+              onClick = { coroutineScope.launch { drawerState.open() } },
+            )
 
             // Center Crown + "Live Shayari / Shayari Lok" branding
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -519,9 +472,7 @@ fun HomeScreen(
         if (!isExpandedWidth) {
           CleanWhiteBottomBar(
             activeTab = readyState.activeTab,
-            unreadNotificationCount = unreadNotificationCount,
             onSelectTab = onSelectTab,
-            onNotificationsClick = onNotificationsClick,
           )
         }
       },
@@ -571,19 +522,6 @@ fun HomeScreen(
               },
               label = { Text(strings.tabFavorites) },
               modifier = Modifier.testTag("nav_favorites"),
-            )
-            NavigationRailItem(
-              selected = false,
-              onClick = onNotificationsClick,
-              icon = {
-                Icon(
-                  painter = painterResource(id = R.drawable.ic_notification),
-                  contentDescription = strings.tabAlerts,
-                  modifier = Modifier.size(22.dp),
-                )
-              },
-              label = { Text(strings.tabAlerts) },
-              modifier = Modifier.testTag("nav_notifications"),
             )
             NavigationRailItem(
               selected = readyState.activeTab == MainTab.PROFILE,
@@ -829,6 +767,7 @@ fun HomeScreen(
       )
     }
   }
+  }
 }
 
 @Composable
@@ -960,9 +899,7 @@ private fun HeaderIconButton(
 @Composable
 private fun CleanWhiteBottomBar(
   activeTab: MainTab,
-  unreadNotificationCount: Int,
   onSelectTab: (MainTab) -> Unit,
-  onNotificationsClick: () -> Unit,
 ) {
   val strings = LocalAppStrings.current
   Surface(
@@ -1006,15 +943,6 @@ private fun CleanWhiteBottomBar(
           badgeCount = 0,
           testTag = "nav_favorites",
           onClick = { onSelectTab(MainTab.FAVORITES) },
-          modifier = Modifier.weight(1f),
-        )
-        BottomBarTabItem(
-          label = strings.tabAlerts,
-          iconRes = R.drawable.ic_notification,
-          selected = false,
-          badgeCount = unreadNotificationCount,
-          testTag = "nav_notifications",
-          onClick = onNotificationsClick,
           modifier = Modifier.weight(1f),
         )
         BottomBarTabItem(
@@ -1145,5 +1073,392 @@ private fun EmptyShayariState(
       textAlign = TextAlign.Center,
       modifier = Modifier.widthIn(max = 300.dp),
     )
+  }
+}
+
+@Composable
+private fun ShayariSideDrawerSheet(
+  appName: String,
+  socialLink: String,
+  activeTab: MainTab,
+  myProfile: PublicProfile?,
+  userEmail: String,
+  unreadNotificationCount: Int,
+  isRefreshing: Boolean,
+  selectedLanguageCode: String,
+  selectedCountryCode: String,
+  onCloseDrawer: () -> Unit,
+  onSelectTab: (MainTab) -> Unit,
+  onNotificationsClick: () -> Unit,
+  onRefreshClick: () -> Unit,
+  onOpenLocaleClick: () -> Unit,
+  onSettingsClick: () -> Unit,
+  onShareAppClick: () -> Unit,
+  onOpenCommunityClick: (String) -> Unit,
+  onSignOutClick: () -> Unit,
+) {
+  val strings = LocalAppStrings.current
+  val drawerItemColors =
+    NavigationDrawerItemDefaults.colors(
+      selectedContainerColor = BadgePurple.copy(alpha = 0.55f),
+      unselectedContainerColor = Color.Transparent,
+      selectedIconColor = CrownGold,
+      unselectedIconColor = Color(0xFFD2C4EB),
+      selectedTextColor = Color.White,
+      unselectedTextColor = Color(0xFFF3EBFF),
+    )
+
+  ModalDrawerSheet(
+    drawerContainerColor = DeepRoyalPurple,
+    drawerContentColor = Color.White,
+    windowInsets = WindowInsets(0, 0, 0, 0),
+    modifier = Modifier.widthIn(min = 290.dp, max = 340.dp).fillMaxWidth(0.82f),
+  ) {
+    Box(
+      modifier =
+        Modifier.fillMaxSize()
+          .background(
+            Brush.verticalGradient(
+              colors = listOf(HeaderPurpleStart, DeepRoyalPurple, Color(0xFF100520))
+            )
+          )
+    ) {
+      Canvas(modifier = Modifier.fillMaxSize()) {
+        drawCircle(
+          brush =
+            Brush.radialGradient(
+              colors = listOf(NeonPink.copy(alpha = 0.16f), Color.Transparent),
+              center = Offset(size.width * 0.9f, size.height * 0.12f),
+              radius = size.minDimension * 0.7f,
+            ),
+          center = Offset(size.width * 0.9f, size.height * 0.12f),
+          radius = size.minDimension * 0.7f,
+        )
+      }
+
+      Column(
+        modifier =
+          Modifier.fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+      ) {
+        // Brand & Live Profile Drawer Header
+        Column(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clickable { onSelectTab(MainTab.PROFILE) }
+              .padding(horizontal = 20.dp, vertical = 18.dp)
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Image(
+                painter = painterResource(id = R.drawable.ic_crown),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = appName,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.ExtraBold,
+                fontStyle = FontStyle.Italic,
+                fontSize = 18.sp,
+                color = CrownGold,
+              )
+            }
+
+            Box(
+              contentAlignment = Alignment.Center,
+              modifier =
+                Modifier.minimumInteractiveComponentSize()
+                  .size(40.dp)
+                  .clip(CircleShape)
+                  .clickable(onClick = onCloseDrawer)
+                  .testTag("drawer_close_button"),
+            ) {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_close),
+                contentDescription = stringResource(R.string.cd_back),
+                tint = Color.White.copy(alpha = 0.85f),
+                modifier = Modifier.size(20.dp),
+              )
+            }
+          }
+
+          Spacer(modifier = Modifier.height(16.dp))
+
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            UserAvatar(
+              photoUrl = myProfile?.photoUrl.orEmpty(),
+              displayName = myProfile?.displayName?.ifBlank { appName } ?: appName,
+              size = 56.dp,
+              showOnlineDot = true,
+            )
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+              Text(
+                text = myProfile?.displayName?.ifBlank { "Shayari Lover" } ?: "Shayari Lover",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              val handleText = myProfile?.effectiveHandle?.takeIf { it.isNotBlank() } ?: ""
+              if (handleText.isNotBlank()) {
+                Text(
+                  text = handleText,
+                  style = MaterialTheme.typography.labelMedium,
+                  color = CrownGold,
+                  fontWeight = FontWeight.SemiBold,
+                )
+              }
+              if (userEmail.isNotBlank()) {
+                Text(
+                  text = userEmail,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = Color(0xFFD2C4EB),
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+            }
+          }
+        }
+
+        HorizontalDivider(color = NeonVioletGlow.copy(alpha = 0.25f))
+
+        Column(
+          modifier =
+            Modifier.weight(1f)
+              .verticalScroll(rememberScrollState())
+              .padding(horizontal = 12.dp, vertical = 10.dp),
+          verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          NavigationDrawerItem(
+            selected = activeTab == MainTab.EXPLORE,
+            onClick = { onSelectTab(MainTab.EXPLORE) },
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_home),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.tabHome, fontWeight = FontWeight.SemiBold) },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_home"),
+          )
+          NavigationDrawerItem(
+            selected = activeTab == MainTab.COMMUNITY,
+            onClick = { onSelectTab(MainTab.COMMUNITY) },
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_community),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.tabFriends, fontWeight = FontWeight.SemiBold) },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_friends"),
+          )
+          NavigationDrawerItem(
+            selected = activeTab == MainTab.FAVORITES,
+            onClick = { onSelectTab(MainTab.FAVORITES) },
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_heart_filled),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.tabFavorites, fontWeight = FontWeight.SemiBold) },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_favorites"),
+          )
+          NavigationDrawerItem(
+            selected = activeTab == MainTab.PROFILE,
+            onClick = { onSelectTab(MainTab.PROFILE) },
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_person),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.tabProfile, fontWeight = FontWeight.SemiBold) },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_profile"),
+          )
+          NavigationDrawerItem(
+            selected = false,
+            onClick = onNotificationsClick,
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_notification),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.liveAlertsTitle, fontWeight = FontWeight.SemiBold) },
+            badge = {
+              if (unreadNotificationCount > 0) {
+                Surface(shape = CircleShape, color = NeonPink) {
+                  Text(
+                    text = if (unreadNotificationCount > 99) "99+" else unreadNotificationCount.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                  )
+                }
+              }
+            },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("drawer_nav_alerts"),
+          )
+
+          HorizontalDivider(
+            color = NeonVioletGlow.copy(alpha = 0.22f),
+            modifier = Modifier.padding(vertical = 8.dp, horizontal = 8.dp),
+          )
+
+          NavigationDrawerItem(
+            selected = false,
+            onClick = { if (!isRefreshing) onRefreshClick() },
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_refresh),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = {
+              Text(
+                text = if (isRefreshing) strings.menuSyncing else strings.menuSync,
+                fontWeight = FontWeight.Medium,
+              )
+            },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("menu_sync_item"),
+          )
+          NavigationDrawerItem(
+            selected = false,
+            onClick = onOpenLocaleClick,
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_language),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.menuLanguageRegion, fontWeight = FontWeight.Medium) },
+            badge = {
+              Text(
+                text = "${selectedLanguageCode.uppercase()} • ${selectedCountryCode.uppercase()}",
+                style = MaterialTheme.typography.labelSmall,
+                color = CrownGold,
+                fontWeight = FontWeight.Bold,
+              )
+            },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("menu_locale_item"),
+          )
+          NavigationDrawerItem(
+            selected = false,
+            onClick = onSettingsClick,
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_settings),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.menuSettings, fontWeight = FontWeight.Medium) },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("menu_settings_item"),
+          )
+          NavigationDrawerItem(
+            selected = false,
+            onClick = onShareAppClick,
+            icon = {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_share),
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+              )
+            },
+            label = { Text(strings.menuShareApp, fontWeight = FontWeight.Medium) },
+            colors = drawerItemColors,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.minimumInteractiveComponentSize().testTag("menu_share_app_item"),
+          )
+          if (socialLink.isNotBlank()) {
+            NavigationDrawerItem(
+              selected = false,
+              onClick = { onOpenCommunityClick(socialLink) },
+              icon = {
+                Icon(
+                  painter = painterResource(id = R.drawable.ic_open_in_new),
+                  contentDescription = null,
+                  modifier = Modifier.size(22.dp),
+                )
+              },
+              label = { Text(strings.menuJoinCommunity, fontWeight = FontWeight.Medium) },
+              colors = drawerItemColors,
+              shape = RoundedCornerShape(14.dp),
+              modifier = Modifier.minimumInteractiveComponentSize().testTag("menu_community_item"),
+            )
+          }
+        }
+
+        HorizontalDivider(color = NeonVioletGlow.copy(alpha = 0.25f))
+
+        Row(
+          modifier =
+            Modifier.fillMaxWidth()
+              .clickable(onClick = onSignOutClick)
+              .minimumInteractiveComponentSize()
+              .padding(horizontal = 22.dp, vertical = 14.dp)
+              .testTag("drawer_sign_out_button"),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+              painter = painterResource(id = R.drawable.ic_logout),
+              contentDescription = null,
+              tint = NeonPink,
+              modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+              text = strings.signOut,
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = NeonPink,
+            )
+          }
+          Text(
+            text = "v1.0",
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFFD2C4EB).copy(alpha = 0.75f),
+          )
+        }
+      }
+    }
   }
 }

@@ -112,6 +112,13 @@ service cloud.firestore {
       }
     }
 
+    // 2b. Optional lowercase appusers directory compatibility (signed-in read, owner write)
+    match /appusers/{uid} {
+      allow read: if isSignedIn();
+      allow create, update: if isOwner(uid) && isValidPublicProfileWrite(request.resource.data, uid);
+      allow delete: if isOwner(uid);
+    }
+
     // 3. Follow & Like social edges (actorId == request.auth.uid)
     match /socialEdges/{edgeId} {
       allow read: if isSignedIn();

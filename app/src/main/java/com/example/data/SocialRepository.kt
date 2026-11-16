@@ -43,16 +43,46 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
   fun observeMyProfile(selfUid: String): Flow<PublicProfile?> = flow {
     requireUserId()
-    val docRef = db.collection("appUsers").document(selfUid)
-    emitAll(
-      docRef
+    val publicDocRef = db.collection("appUsers").document(selfUid)
+    val privateDocRef = db.collection("users").document(selfUid)
+    val publicFlow =
+      publicDocRef.snapshots().map { snapshot ->
+        if (!snapshot.exists()) null else snapshot.toPublicProfile()
+      }
+    val privateFlow =
+      privateDocRef
         .snapshots()
-        .map { snapshot ->
-          if (!snapshot.exists()) null else snapshot.toPublicProfile()
+        .map { snapshot -> if (!snapshot.exists()) null else snapshot.toPublicProfile() }
+        .catch { cause ->
+          val firestoreErr =
+            generateSequence(cause) { it.cause }
+              .filterIsInstance<FirebaseFirestoreException>()
+              .firstOrNull()
+          if (firestoreErr == null && cause is CancellationException) throw cause
+          emit(null)
+        }
+    emitAll(
+      kotlinx.coroutines.flow
+        .combine(publicFlow, privateFlow) { publicProf, privateProf ->
+          when {
+            publicProf != null && privateProf != null ->
+              publicProf.copy(
+                displayName = publicProf.displayName.ifBlank { privateProf.displayName },
+                photoUrl = publicProf.photoUrl.ifBlank { privateProf.photoUrl },
+                handle = publicProf.handle.ifBlank { privateProf.handle },
+                address = publicProf.address.ifBlank { privateProf.address },
+              )
+            publicProf != null -> publicProf
+            else -> privateProf
+          }
         }
         .catch { cause ->
-          if (cause is CancellationException) throw cause
-          handleFirestoreError(cause, OperationType.GET, docRef.path)
+          val firestoreErr =
+            generateSequence(cause) { it.cause }
+              .filterIsInstance<FirebaseFirestoreException>()
+              .firstOrNull()
+          if (firestoreErr == null && cause is CancellationException) throw cause
+          handleFirestoreError(firestoreErr ?: cause, OperationType.GET, publicDocRef.path)
           throw cause
         }
     )
@@ -61,18 +91,43 @@ class SocialRepository(private val db: FirebaseFirestore) {
   fun observeDiscoverableProfiles(): Flow<List<PublicProfile>> = flow {
     requireUserId()
     val path = "appUsers"
-    emitAll(
+    val primaryFlow =
       db.collection(path)
         .limit(200)
         .snapshots()
-        .map { snapshot ->
-          snapshot.documents
-            .mapNotNull { it.toPublicProfile() }
-            .sortedByDescending { it.updatedAtMillis }
+        .map { snapshot -> snapshot.documents.mapNotNull { it.toPublicProfile() } }
+    val lowercaseFlow =
+      db.collection("appusers")
+        .limit(200)
+        .snapshots()
+        .map { snapshot -> snapshot.documents.mapNotNull { it.toPublicProfile() } }
+        .catch { cause ->
+          val firestoreErr =
+            generateSequence(cause) { it.cause }
+              .filterIsInstance<FirebaseFirestoreException>()
+              .firstOrNull()
+          if (firestoreErr == null && cause is CancellationException) throw cause
+          emit(emptyList())
+        }
+    emitAll(
+      kotlinx.coroutines.flow
+        .combine(primaryFlow, lowercaseFlow) { primary, secondary ->
+          val merged = linkedMapOf<String, PublicProfile>()
+          primary.forEach { prof ->
+            if (prof.effectiveUid.isNotBlank()) merged[prof.effectiveUid] = prof
+          }
+          secondary.forEach { prof ->
+            if (prof.effectiveUid.isNotBlank()) merged.putIfAbsent(prof.effectiveUid, prof)
+          }
+          merged.values.sortedByDescending { it.updatedAtMillis }
         }
         .catch { cause ->
-          if (cause is CancellationException) throw cause
-          handleFirestoreError(cause, OperationType.LIST, path)
+          val firestoreErr =
+            generateSequence(cause) { it.cause }
+              .filterIsInstance<FirebaseFirestoreException>()
+              .firstOrNull()
+          if (firestoreErr == null && cause is CancellationException) throw cause
+          handleFirestoreError(firestoreErr ?: cause, OperationType.LIST, path)
           throw cause
         }
     )
@@ -100,51 +155,55 @@ class SocialRepository(private val db: FirebaseFirestore) {
     }
 
     return try {
-      val appUsers = db.collection("appUsers")
-      if (handleWithAt.isNotBlank()) {
-        runCatching { appUsers.whereEqualTo("handle", handleWithAt).limit(10).get().await() }
-          .onSuccess { collectDocs(it.documents) }
-        runCatching { appUsers.whereEqualTo("handleLower", handleWithAt.lowercase()).limit(10).get().await() }
-          .onSuccess { collectDocs(it.documents) }
-        runCatching { appUsers.whereEqualTo("username", stripped).limit(10).get().await() }
-          .onSuccess { collectDocs(it.documents) }
-        runCatching { appUsers.whereEqualTo("username", stripped.uppercase()).limit(10).get().await() }
-          .onSuccess { collectDocs(it.documents) }
-      }
-      runCatching {
-        appUsers
-          .orderBy("displayNameLower")
-          .startAt(q.lowercase())
-          .endAt("${q.lowercase()}\uf8ff")
-          .limit(25)
-          .get()
-          .await()
-      }.onSuccess { collectDocs(it.documents) }
-
-      runCatching {
-        appUsers
-          .orderBy("displayName")
-          .startAt(q)
-          .endAt("${q}\uf8ff")
-          .limit(25)
-          .get()
-          .await()
-      }.onSuccess { collectDocs(it.documents) }
-
-      // Scan discoverable appUsers directory locally if prefix indexes haven't matched
-      if (resultsByUid.isEmpty()) {
+      for (collectionName in listOf("appUsers", "appusers")) {
+        val col = db.collection(collectionName)
+        if (handleWithAt.isNotBlank()) {
+          runCatching { col.whereEqualTo("handle", handleWithAt).limit(10).get().await() }
+            .onSuccess { collectDocs(it.documents) }
+          runCatching { col.whereEqualTo("handleLower", handleWithAt.lowercase()).limit(10).get().await() }
+            .onSuccess { collectDocs(it.documents) }
+          runCatching { col.whereEqualTo("username", stripped).limit(10).get().await() }
+            .onSuccess { collectDocs(it.documents) }
+          runCatching { col.whereEqualTo("username", stripped.uppercase()).limit(10).get().await() }
+            .onSuccess { collectDocs(it.documents) }
+        }
         runCatching {
-          appUsers.limit(120).get().await()
-        }.onSuccess { snap ->
-          collectDocs(
-            snap.documents.filter { doc ->
-              val prof = doc.toPublicProfile() ?: return@filter false
-              prof.matchesQuery(q)
+          col
+            .orderBy("displayNameLower")
+            .startAt(q.lowercase())
+            .endAt("${q.lowercase()}\uf8ff")
+            .limit(25)
+            .get()
+            .await()
+        }.onSuccess { collectDocs(it.documents) }
+
+        runCatching {
+          col
+            .orderBy("displayName")
+            .startAt(q)
+            .endAt("${q}\uf8ff")
+            .limit(25)
+            .get()
+            .await()
+        }.onSuccess { collectDocs(it.documents) }
+      }
+
+      // Scan discoverable appUsers / appusers collections locally if prefix indexes haven't matched
+      if (resultsByUid.isEmpty()) {
+        for (collectionName in listOf("appUsers", "appusers")) {
+          runCatching {
+            db.collection(collectionName).limit(120).get().await()
+          }.onSuccess { snap ->
+            collectDocs(
+              snap.documents.filter { doc ->
+                val prof = doc.toPublicProfile() ?: return@filter false
+                prof.matchesQuery(q)
+              }
+            )
+          }.onFailure { err ->
+            if (err !is CancellationException && collectionName == "appUsers") {
+              handleFirestoreError(err, OperationType.LIST, collectionName)
             }
-          )
-        }.onFailure { err ->
-          if (err !is CancellationException) {
-            handleFirestoreError(err, OperationType.LIST, "appUsers")
           }
         }
       }
