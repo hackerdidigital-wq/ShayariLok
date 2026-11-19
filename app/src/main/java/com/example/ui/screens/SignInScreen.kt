@@ -64,13 +64,20 @@ import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
 import com.example.ui.theme.NeonVioletGlow
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import com.example.data.rememberShayariImageBitmap
+
 @Composable
 fun SignInScreen(
+  appLogoUrl: String = "",
   onAuthSuccess: () -> Unit,
 ) {
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
   val credentialManager = remember(context) { CredentialManager.create(context) }
+  val customLogoBitmap = rememberShayariImageBitmap(appLogoUrl)
 
   var isLoading by remember { mutableStateOf(false) }
   var isCheckingAutoSignIn by remember { mutableStateOf(true) }
@@ -121,12 +128,21 @@ fun SignInScreen(
           modifier = Modifier.size(84.dp),
         ) {
           Box(contentAlignment = Alignment.Center) {
-            Icon(
-              painter = painterResource(id = R.drawable.ic_crown),
-              contentDescription = stringResource(R.string.app_name),
-              tint = CrownGold,
-              modifier = Modifier.size(44.dp),
-            )
+            if (customLogoBitmap != null) {
+              Image(
+                bitmap = customLogoBitmap,
+                contentDescription = stringResource(R.string.app_name),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+              )
+            } else {
+              Icon(
+                painter = painterResource(id = R.drawable.ic_crown),
+                contentDescription = stringResource(R.string.app_name),
+                tint = CrownGold,
+                modifier = Modifier.size(44.dp),
+              )
+            }
           }
         }
 
@@ -306,6 +322,7 @@ private fun FeatureBullet(iconRes: Int, text: String) {
 @Composable
 private fun GoogleColorMark(modifier: Modifier = Modifier) {
   Canvas(modifier = modifier) {
+    if (size.minDimension <= 1f) return@Canvas
     val strokeWidth = size.minDimension * 0.22f
     val inset = strokeWidth / 2f
     val arcSize = Size(size.width - strokeWidth, size.height - strokeWidth)

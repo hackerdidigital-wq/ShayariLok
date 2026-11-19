@@ -131,6 +131,7 @@ fun ShayariSplashScreen(
   ) {
     // Ambient radial neon aura & drifting sparkle/heart VFX
     Canvas(modifier = Modifier.fillMaxSize()) {
+      if (size.minDimension <= 1f) return@Canvas
       drawCircle(
         brush =
           Brush.radialGradient(

@@ -178,38 +178,31 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `remote endpoints target live ShayariLok-Admin- repo and append cache busters`() {
+  fun `remote endpoints target Aegis Enterprise Console SDK config with App ID`() {
     assertEquals(
-      "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok-Admin-/main/config.json",
+      "https://aegis-enterprise-console.deepakdeepakbamniya92.workers.dev/api/v1/sdk/config",
       DefaultShayariData.DEFAULT_REMOTE_CONFIG_URL,
     )
-    assertTrue(
-      DefaultShayariData.REMOTE_CONFIG_ENDPOINTS.contains(
-        "https://cdn.jsdelivr.net/gh/hackerdidigital-wq/ShayariLok-Admin-@main/config.json"
-      )
-    )
-    assertTrue(
-      DefaultShayariData.REMOTE_CONFIG_ENDPOINTS.contains(
-        "https://api.github.com/repos/hackerdidigital-wq/ShayariLok-Admin-/contents/config.json?ref=main"
-      )
-    )
-
-    val app = ApplicationProvider.getApplicationContext<Application>()
-    val repo = ShayariRepository(app)
+    assertEquals("app_7d74c0634e9a6550f94ba47b", DefaultShayariData.AEGIS_APP_ID)
     assertEquals(
-      "https://example.com/config.json?t=12345",
-      repo.buildCacheBustedUrl("https://example.com/config.json", 12345L),
-    )
-    assertEquals(
-      "https://example.com/config.json?raw=1&t=12345",
-      repo.buildCacheBustedUrl("https://example.com/config.json?raw=1", 12345L),
+      listOf("https://aegis-enterprise-console.deepakdeepakbamniya92.workers.dev/api/v1/sdk/config"),
+      DefaultShayariData.REMOTE_CONFIG_ENDPOINTS,
     )
   }
 
   @Test
-  fun `unwrapGitHubContentsPayloadIfNeeded decodes base64 GitHub Contents API response`() {
+  fun `unwrapSdkConfigPayload unwraps envelope payloads and base64 fallback cleanly`() {
     val app = ApplicationProvider.getApplicationContext<Application>()
     val repo = ShayariRepository(app)
+
+    val wrappedData =
+      """{"success":true,"data":{"app_name":"Shayari Lok","latest_version_code":3,"categories":["All","Love"],"shayari_list":[{"id":7,"category":"Love","text":"Dil ki baat","author":"Aarav"}]}}"""
+    val unwrappedData = repo.unwrapSdkConfigPayload(wrappedData)
+    val parsedWrapped = ShayariConfig.fromJson(unwrappedData)
+    assertEquals(3, parsedWrapped.latestVersionCode)
+    assertEquals(1, parsedWrapped.shayariList.size)
+    assertEquals("Dil ki baat", parsedWrapped.shayariList.first().text)
+
     val rawConfig =
       """{"app_name":"Shayari Lok","latest_version_code":2,"categories":["All","Love"],"shayari_list":[{"id":6,"category":"Love","text":"I love you tanisha","author":"Tan8sha"}]}"""
     val b64 =
@@ -218,7 +211,7 @@ class ExampleRobolectricTest {
         .replace("\n", "\\n")
     val apiWrapper = """{"encoding":"base64","content":"$b64"}"""
 
-    val unwrapped = repo.unwrapGitHubContentsPayloadIfNeeded(apiWrapper)
+    val unwrapped = repo.unwrapSdkConfigPayload(apiWrapper)
     val parsed = ShayariConfig.fromJson(unwrapped)
     assertEquals(2, parsed.latestVersionCode)
     assertEquals(1, parsed.shayariList.size)
@@ -226,7 +219,7 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `fetchRemoteConfig skips 404 endpoint and syncs new shayari category and notification live`() =
+  fun `fetchRemoteConfig sends X-App-Id and X-API-Key headers and syncs live config`() =
     runTest {
       val app = ApplicationProvider.getApplicationContext<Application>()
       val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -237,45 +230,46 @@ class ExampleRobolectricTest {
       val updatedJson =
         """
         {
-          "app_name": "Shayari Lok",
-          "latest_version_code": 2,
-          "force_update_url": "https://play.google.com/store/apps/details?id=com.cyberking.shayarilok",
-          "maintenance_mode": false,
-          "categories": ["All", "Love", "Dosti"],
-          "notifications": [
-            {
-              "id": 3,
-              "title": "9999",
-              "message": "99999999",
-              "badge": "Shayari Alert",
-              "time_label": "Today"
-            }
-          ],
-          "shayari_list": [
-            {
-              "id": 6,
-              "category": "Love",
-              "text": "I love you tanisha",
-              "author": "Tan8sha"
-            },
-            {
-              "id": 99,
-              "category": "Dosti",
-              "text": "सच्चे दोस्त किस्मत से मिलते हैं।",
-              "author": "Shayari Lok"
-            }
-          ]
+          "success": true,
+          "data": {
+            "app_name": "Shayari Lok",
+            "latest_version_code": 2,
+            "force_update_url": "https://play.google.com/store/apps/details?id=com.cyberking.shayarilok",
+            "maintenance_mode": false,
+            "categories": ["All", "Love", "Dosti"],
+            "notifications": [
+              {
+                "id": 3,
+                "title": "9999",
+                "message": "99999999",
+                "badge": "Shayari Alert",
+                "time_label": "Today"
+              }
+            ],
+            "shayari_list": [
+              {
+                "id": 6,
+                "category": "Love",
+                "text": "I love you tanisha",
+                "author": "Tan8sha"
+              },
+              {
+                "id": 99,
+                "category": "Dosti",
+                "text": "सच्चे दोस्त किस्मत से मिलते हैं।",
+                "author": "Shayari Lok"
+              }
+            ]
+          }
         }
         """.trimIndent()
 
       val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-      var requestedQuery = ""
-      server.createContext("/missing.json") { exchange ->
-        exchange.sendResponseHeaders(404, -1)
-        exchange.close()
-      }
-      server.createContext("/live/config.json") { exchange ->
-        requestedQuery = exchange.requestURI.query ?: ""
+      var receivedAppId: String? = null
+      var receivedApiKey: String? = null
+      server.createContext("/api/v1/sdk/config") { exchange ->
+        receivedAppId = exchange.requestHeaders.getFirst("X-App-Id")
+        receivedApiKey = exchange.requestHeaders.getFirst("X-API-Key")
         val bytes = updatedJson.toByteArray(Charsets.UTF_8)
         exchange.responseHeaders.add("Content-Type", "application/json; charset=utf-8")
         exchange.sendResponseHeaders(200, bytes.size.toLong())
@@ -287,15 +281,14 @@ class ExampleRobolectricTest {
         val port = server.address.port
         val result =
           repo.fetchRemoteConfig(
-            endpoints =
-              listOf(
-                "http://127.0.0.1:$port/missing.json",
-                "http://127.0.0.1:$port/live/config.json",
-              )
+            endpoints = listOf("http://127.0.0.1:$port/api/v1/sdk/config"),
+            appId = "app_test_123",
+            apiKey = "key_test_456",
           )
 
         assertTrue(result.isSuccess)
-        assertTrue(requestedQuery.startsWith("t="))
+        assertEquals("app_test_123", receivedAppId)
+        assertEquals("key_test_456", receivedApiKey)
         val synced = result.getOrThrow()
         assertEquals(2, synced.latestVersionCode)
         assertEquals(listOf("All", "Love", "Dosti"), synced.categories)
@@ -306,6 +299,90 @@ class ExampleRobolectricTest {
         assertTrue(repo.hasUnreadNotifications(synced))
         assertTrue(repo.hasCachedRemoteConfig())
         assertTrue(repo.getLastSyncedTimeMillis() > 0L)
+      } finally {
+        server.stop(0)
+      }
+    }
+
+  @Test
+  fun `fetchRemoteConfig classifies missing credentials, 401 unauthorized, 500 server error, and invalid JSON`() =
+    runTest {
+      val app = ApplicationProvider.getApplicationContext<Application>()
+      val cm = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+      Shadows.shadowOf(cm).setDefaultNetworkActive(true)
+      val repo = ShayariRepository(app)
+      if (!repo.isNetworkAvailable()) return@runTest
+
+      val missingRes =
+        repo.fetchRemoteConfig(
+          endpoints = listOf("http://127.0.0.1:1/api/v1/sdk/config"),
+          appId = "app_test_123",
+          apiKey = "YOUR_AEGIS_API_KEY",
+        )
+      assertTrue(missingRes.isFailure)
+      val missingErr = missingRes.exceptionOrNull() as com.example.data.RemoteConfigException
+      assertEquals(com.example.data.RemoteConfigErrorCode.MISSING_CREDENTIALS, missingErr.code)
+      assertFalse(missingErr.isRetryable)
+
+      val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+      server.createContext("/unauth") { exchange ->
+        val body = """{"error":"Invalid API key"}""".toByteArray(Charsets.UTF_8)
+        exchange.responseHeaders.add("Content-Type", "application/json")
+        exchange.sendResponseHeaders(401, body.size.toLong())
+        exchange.responseBody.use { it.write(body) }
+      }
+      server.createContext("/server-err") { exchange ->
+        val body = """{"message":"Upstream timeout"}""".toByteArray(Charsets.UTF_8)
+        exchange.responseHeaders.add("Content-Type", "application/json")
+        exchange.sendResponseHeaders(500, body.size.toLong())
+        exchange.responseBody.use { it.write(body) }
+      }
+      server.createContext("/bad-json") { exchange ->
+        val body = """not-json""".toByteArray(Charsets.UTF_8)
+        exchange.sendResponseHeaders(200, body.size.toLong())
+        exchange.responseBody.use { it.write(body) }
+      }
+      server.start()
+
+      try {
+        val port = server.address.port
+
+        val unauthRes =
+          repo.fetchRemoteConfig(
+            endpoints = listOf("http://127.0.0.1:$port/unauth"),
+            appId = "app_test_123",
+            apiKey = "bad_key",
+          )
+        assertTrue(unauthRes.isFailure)
+        val unauthErr = unauthRes.exceptionOrNull() as com.example.data.RemoteConfigException
+        assertEquals(com.example.data.RemoteConfigErrorCode.UNAUTHORIZED, unauthErr.code)
+        assertEquals(401, unauthErr.httpStatus)
+        assertEquals("Invalid API key", unauthErr.serverMessage)
+        assertFalse(unauthErr.isRetryable)
+
+        val serverRes =
+          repo.fetchRemoteConfig(
+            endpoints = listOf("http://127.0.0.1:$port/server-err"),
+            appId = "app_test_123",
+            apiKey = "valid_key",
+          )
+        assertTrue(serverRes.isFailure)
+        val serverErr = serverRes.exceptionOrNull() as com.example.data.RemoteConfigException
+        assertEquals(com.example.data.RemoteConfigErrorCode.SERVER_ERROR, serverErr.code)
+        assertEquals(500, serverErr.httpStatus)
+        assertEquals("Upstream timeout", serverErr.serverMessage)
+        assertTrue(serverErr.isRetryable)
+
+        val badJsonRes =
+          repo.fetchRemoteConfig(
+            endpoints = listOf("http://127.0.0.1:$port/bad-json"),
+            appId = "app_test_123",
+            apiKey = "valid_key",
+          )
+        assertTrue(badJsonRes.isFailure)
+        val badJsonErr = badJsonRes.exceptionOrNull() as com.example.data.RemoteConfigException
+        assertEquals(com.example.data.RemoteConfigErrorCode.INVALID_PAYLOAD, badJsonErr.code)
+        assertFalse(badJsonErr.isRetryable)
       } finally {
         server.stop(0)
       }
@@ -675,4 +752,91 @@ class ExampleRobolectricTest {
       assertTrue(dataUri.startsWith("data:image/jpeg;base64,"))
       assertTrue(dataUri.length <= 165_000)
     }
+
+  @Test
+  fun `ShayariConfig parses and serializes dynamic banners with clickable redirect links`() {
+    val rawJson =
+      """
+      {
+        "app_name": "Shayari Lok",
+        "latest_version_code": 1,
+        "maintenance_mode": false,
+        "dynamic_banners": [
+          {
+            "id": "promo_diwali",
+            "badge": "HOT",
+            "title": "Diwali Special Shayari",
+            "subtitle": "Read curated festive couplets now",
+            "banner_url": "https://cdn.example.com/diwali.jpg",
+            "redirect_url": "https://shayarilok.example.com/diwali",
+            "cta_text": "Read Now"
+          }
+        ]
+      }
+      """.trimIndent()
+
+    val parsed = ShayariConfig.fromJson(rawJson)
+    assertEquals(1, parsed.banners.size)
+    val banner = parsed.banners.first()
+    assertEquals("promo_diwali", banner.id)
+    assertEquals("HOT", banner.badge)
+    assertEquals("https://cdn.example.com/diwali.jpg", banner.imageUrl)
+    assertEquals("https://shayarilok.example.com/diwali", banner.linkUrl)
+    assertEquals("Read Now", banner.ctaText)
+
+    val roundTrip = ShayariConfig.fromJson(parsed.toJson())
+    assertEquals(parsed.banners, roundTrip.banners)
+  }
+
+  @Test
+  fun `AdMobManager isValidAdUnitId accepts valid unit IDs and rejects App IDs or invalid strings`() {
+    assertTrue(com.example.data.AdMobManager.isValidAdUnitId("ca-app-pub-3940256099942544/6300978111"))
+    assertTrue(com.example.data.AdMobManager.isValidAdUnitId("ca-app-pub-3940256099942544/1033173712"))
+    assertFalse(com.example.data.AdMobManager.isValidAdUnitId("ca-app-pub-3940256099942544~3347511713"))
+    assertFalse(com.example.data.AdMobManager.isValidAdUnitId(""))
+    assertFalse(com.example.data.AdMobManager.isValidAdUnitId("invalid-ad-id"))
+  }
+
+  @Test
+  fun `MainActivity, SettingsActivity, and PrivacyPolicyActivity launch cleanly without cold-start crashes`() {
+    val mainController = org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup()
+    assertTrue(!mainController.get().isFinishing)
+    mainController.pause().stop().destroy()
+
+    val settingsController = org.robolectric.Robolectric.buildActivity(SettingsActivity::class.java).setup()
+    assertTrue(!settingsController.get().isFinishing)
+    settingsController.pause().stop().destroy()
+
+    val privacyController = org.robolectric.Robolectric.buildActivity(PrivacyPolicyActivity::class.java).setup()
+    assertTrue(!privacyController.get().isFinishing)
+    privacyController.pause().stop().destroy()
+
+    val notificationsController = org.robolectric.Robolectric.buildActivity(NotificationsActivity::class.java).setup()
+    assertTrue(!notificationsController.get().isFinishing)
+    notificationsController.pause().stop().destroy()
+  }
+
+  @Test
+  fun `normalizeExternalUrl preserves deep-link schemes and rejects unsafe schemes`() {
+    assertEquals("https://t.me/shayarilok_official", normalizeExternalUrl("https://t.me/shayarilok_official"))
+    assertEquals("tg://resolve?domain=shayarilok_official", normalizeExternalUrl("tg://resolve?domain=shayarilok_official"))
+    assertEquals("whatsapp://send?text=hi", normalizeExternalUrl("whatsapp://send?text=hi"))
+    assertEquals("mailto:support@cyberking.in", normalizeExternalUrl("mailto:support@cyberking.in"))
+    assertEquals("https://shayarilok.in/diwali", normalizeExternalUrl("shayarilok.in/diwali"))
+    assertEquals(null, normalizeExternalUrl("   "))
+    assertEquals(null, normalizeExternalUrl("javascript:alert(1)"))
+  }
+
+  @Test
+  fun `loadEffectiveCachedConfig prefers synced Firestore overlay config over base cache`() {
+    val app = ApplicationProvider.getApplicationContext<Application>()
+    val repo = ShayariRepository(app)
+    val base = ShayariConfig.fromJson(DefaultShayariData.DEFAULT_CONFIG_JSON)
+    val merged = base.copy(appName = "Shayari Lok Synced", appLogoUrl = "https://cdn.example.com/logo.png")
+    repo.saveMergedOverlayConfig(merged)
+
+    val effective = repo.loadEffectiveCachedConfig()
+    assertEquals("Shayari Lok Synced", effective.appName)
+    assertEquals("https://cdn.example.com/logo.png", effective.appLogoUrl)
+  }
 }

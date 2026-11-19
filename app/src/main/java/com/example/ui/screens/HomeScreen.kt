@@ -103,11 +103,13 @@ import com.example.R
 import com.example.data.ShayariTextSize
 import com.example.data.rememberShayariImageBitmap
 import com.example.model.PublicProfile
+import com.example.model.ShayariBanner
 import com.example.model.ShayariItem
 import com.example.ui.MainTab
 import com.example.ui.ShayariScreenState
 import com.example.ui.components.AdMobBannerCard
 import com.example.ui.components.DailyStreakAndLocaleBar
+import com.example.ui.components.DynamicBannerCarousel
 import com.example.ui.components.LanguageCountrySelectorDialog
 import com.example.ui.components.LivePollCard
 import com.example.ui.components.ShayariCard
@@ -161,6 +163,7 @@ fun HomeScreen(
   onSelectCountry: (String) -> Unit = {},
   onToggleAdultContent: (Boolean) -> Unit = {},
   onVotePoll: (pollId: String, optionId: String) -> Unit = { _, _ -> },
+  onOpenBannerClick: (ShayariBanner) -> Unit = {},
   socialTabContent: @Composable (tab: MainTab, openLocalePicker: () -> Unit) -> Unit,
 ) {
   val strings = LocalAppStrings.current
@@ -279,6 +282,7 @@ fun HomeScreen(
   ) {
     // Subtle animated poster bokeh aura behind the feed
     Canvas(modifier = Modifier.fillMaxSize()) {
+      if (size.minDimension <= 1f) return@Canvas
       val phaseAngle = driftPhase * 2f * PI.toFloat()
       val glowShiftX = cos(phaseAngle) * 28f
       val glowShiftY = sin(phaseAngle) * 24f
@@ -686,6 +690,20 @@ fun HomeScreen(
                     .fillMaxSize()
                     .align(Alignment.TopCenter),
               ) {
+                if (readyState.activeTab == MainTab.EXPLORE) {
+                  item(
+                    key = "streak_locale_grid_bar",
+                    span = { GridItemSpan(gridColumns) },
+                  ) {
+                    DailyStreakAndLocaleBar(
+                      showStreak = engagement.dailyStreakEnabled,
+                      streakDays = dailyStreakDays,
+                      selectedLanguage = selectedLangObj,
+                      selectedCountry = selectedCountryObj,
+                      onOpenLocalePicker = { showLocaleDialog = true },
+                    )
+                  }
+                }
                 if (readyState.activeTab == MainTab.EXPLORE && readyState.hiddenAdultCount > 0) {
                   item(
                     key = "safe_mode_grid_banner",
@@ -694,6 +712,20 @@ fun HomeScreen(
                     SafeModeNoticeBanner(
                       hiddenCount = readyState.hiddenAdultCount,
                       onUnlockClick = { showAgeConfirmDialog = true },
+                    )
+                  }
+                }
+                if (
+                  readyState.activeTab == MainTab.EXPLORE &&
+                    readyState.config.banners.isNotEmpty()
+                ) {
+                  item(
+                    key = "dynamic_banners_grid",
+                    span = { GridItemSpan(gridColumns) },
+                  ) {
+                    DynamicBannerCarousel(
+                      banners = readyState.config.banners,
+                      onBannerClick = onOpenBannerClick,
                     )
                   }
                 }
@@ -709,6 +741,19 @@ fun HomeScreen(
                     AdMobBannerCard(
                       adsEnabled = readyState.config.adsEnabled,
                       bannerAdId = readyState.config.bannerAdId,
+                    )
+                  }
+                }
+                if (readyState.activeTab == MainTab.EXPLORE && engagement.polls.isNotEmpty()) {
+                  items(
+                    items = engagement.polls,
+                    key = { "poll_grid_${it.id}" },
+                    span = { GridItemSpan(gridColumns) },
+                  ) { poll ->
+                    LivePollCard(
+                      poll = poll,
+                      selectedOptionId = votedPollOptions[poll.id],
+                      onVote = onVotePoll,
                     )
                   }
                 }
@@ -750,6 +795,14 @@ fun HomeScreen(
                       SafeModeNoticeBanner(
                         hiddenCount = readyState.hiddenAdultCount,
                         onUnlockClick = { showAgeConfirmDialog = true },
+                      )
+                    }
+                  }
+                  if (readyState.config.banners.isNotEmpty()) {
+                    item(key = "dynamic_banners_list") {
+                      DynamicBannerCarousel(
+                        banners = readyState.config.banners,
+                        onBannerClick = onOpenBannerClick,
                       )
                     }
                   }
@@ -1182,6 +1235,7 @@ private fun ShayariSideDrawerSheet(
         )
   ) {
     Canvas(modifier = Modifier.fillMaxSize()) {
+      if (size.minDimension <= 1f) return@Canvas
       drawCircle(
         brush =
           Brush.radialGradient(

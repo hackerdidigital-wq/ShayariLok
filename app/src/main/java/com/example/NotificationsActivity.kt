@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.example.data.ShayariRepository
+import com.example.data.formatRemoteConfigError
 import com.example.model.ShayariNotification
 import com.example.model.SupportedLanguage
 import com.example.ui.i18n.LocalAppStrings
@@ -73,7 +74,11 @@ class NotificationsActivity : ComponentActivity() {
     val repository = ShayariRepository(this)
     setContent {
       val langCode = remember { repository.getSelectedLanguageCode() }
-      val cachedConfig = remember { repository.loadCachedConfig() }
+      val cachedConfig = remember { repository.loadEffectiveCachedConfig() }
+      val isDark =
+        remember(cachedConfig.dynamicTheme.darkMode) {
+          repository.getUserDarkModeOverride() ?: cachedConfig.dynamicTheme.darkMode
+        }
       val isRtl =
         remember(langCode, cachedConfig) {
           cachedConfig.supportedLanguages.firstOrNull {
@@ -83,7 +88,7 @@ class NotificationsActivity : ComponentActivity() {
       val strings = remember(langCode) { appStringsFor(langCode) }
       val layoutDir = if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
 
-      ShayariLokTheme(dynamicTheme = cachedConfig.dynamicTheme) {
+      ShayariLokTheme(darkTheme = isDark, dynamicTheme = cachedConfig.dynamicTheme) {
         CompositionLocalProvider(
           LocalAppStrings provides strings,
           LocalLayoutDirection provides layoutDir,
@@ -107,7 +112,7 @@ private fun NotificationsContent(
   val strings = LocalAppStrings.current
   val scope = rememberCoroutineScope()
   val snackbarHostState = remember { SnackbarHostState() }
-  var config by remember { mutableStateOf(repository.loadCachedConfig()) }
+  var config by remember { mutableStateOf(repository.loadEffectiveCachedConfig()) }
   var isRefreshing by remember { mutableStateOf(false) }
 
   LaunchedEffect(config) {
@@ -171,10 +176,10 @@ private fun NotificationsContent(
                         repository.markNotificationsRead(updated)
                         snackbarHostState.showSnackbar(strings.notificationsRefreshedMsg)
                       },
-                      onFailure = {
+                      onFailure = { error ->
                         val msg =
                           if (repository.isNetworkAvailable()) {
-                            strings.notificationsUpToDateMsg
+                            formatRemoteConfigError(error, strings)
                           } else {
                             strings.offlineErrorShort
                           }

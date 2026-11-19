@@ -91,19 +91,21 @@ class SettingsActivity : ComponentActivity() {
 
       LaunchedEffect(Unit) {
         try {
-          val dbId = getString(R.string.firestore_database_id)
-          val firestore = FirebaseFirestore.getInstance(dbId)
-          repository.observeRealtimeShayariOverlay(firestore).collect { overlay ->
-            val current = repository.loadEffectiveCachedConfig()
-            val site = overlay.publicSiteConfig
-            val app = overlay.appConfigOverride
-            config =
-              current.copy(
-                appName = app.appName.ifBlank { site?.appName ?: current.appName },
-                appLogoUrl = app.appLogoUrl.ifBlank { site?.appLogoUrl ?: current.appLogoUrl },
-                faqs = app.faqs?.takeIf { it.isNotEmpty() } ?: site?.faqs?.takeIf { it.isNotEmpty() } ?: current.faqs,
-                dynamicTheme = app.dynamicTheme ?: site?.dynamicTheme ?: current.dynamicTheme,
-              )
+          val dbId = getString(R.string.firestore_database_id).trim()
+          if (dbId.isNotEmpty()) {
+            val firestore = FirebaseFirestore.getInstance(dbId)
+            repository.observeRealtimeShayariOverlay(firestore).collect { overlay ->
+              val current = repository.loadEffectiveCachedConfig()
+              val site = overlay.publicSiteConfig
+              val app = overlay.appConfigOverride
+              config =
+                current.copy(
+                  appName = app.appName.ifBlank { site?.appName ?: current.appName },
+                  appLogoUrl = app.appLogoUrl.ifBlank { site?.appLogoUrl ?: current.appLogoUrl },
+                  faqs = app.faqs?.takeIf { it.isNotEmpty() } ?: site?.faqs?.takeIf { it.isNotEmpty() } ?: current.faqs,
+                  dynamicTheme = app.dynamicTheme ?: site?.dynamicTheme ?: current.dynamicTheme,
+                )
+            }
           }
         } catch (_: Exception) {
           // Offline or Robolectric fallback

@@ -20,8 +20,16 @@ object AdMobManager {
   private var lastShownAtMillis: Long = 0L
   private const val INTERSTITIAL_COOLDOWN_MS = 90_000L
 
+  private val VALID_AD_UNIT_REGEX = Regex("^ca-app-pub-\\d+/\\d+$")
+
   fun isRobolectricUnitTest(): Boolean =
     Build.FINGERPRINT.equals("robolectric", ignoreCase = true)
+
+  fun isValidAdUnitId(adUnitId: String): Boolean {
+    val clean = adUnitId.trim()
+    if (clean.isEmpty() || clean.contains('~')) return false
+    return VALID_AD_UNIT_REGEX.matches(clean)
+  }
 
   fun initialize(context: Context, adsEnabled: Boolean) {
     if (!adsEnabled || isRobolectricUnitTest()) return
@@ -35,7 +43,7 @@ object AdMobManager {
 
   fun preloadInterstitial(context: Context, adsEnabled: Boolean, interstitialAdId: String) {
     val cleanId = interstitialAdId.trim()
-    if (!adsEnabled || cleanId.isBlank() || isRobolectricUnitTest()) {
+    if (!adsEnabled || !isValidAdUnitId(cleanId) || isRobolectricUnitTest()) {
       cachedInterstitial = null
       loadedInterstitialAdUnitId = ""
       return
@@ -75,7 +83,7 @@ object AdMobManager {
   ): Boolean {
     val cleanId = interstitialAdId.trim()
     if (activity == null || activity.isFinishing || activity.isDestroyed) return false
-    if (!adsEnabled || cleanId.isBlank() || isRobolectricUnitTest()) return false
+    if (!adsEnabled || !isValidAdUnitId(cleanId) || isRobolectricUnitTest()) return false
 
     val now = System.currentTimeMillis()
     if (now - lastShownAtMillis < INTERSTITIAL_COOLDOWN_MS) {
@@ -101,7 +109,12 @@ object AdMobManager {
           preloadInterstitial(activity, adsEnabled, cleanId)
         }
       }
-    ad.show(activity)
-    return true
+    return runCatching {
+      ad.show(activity)
+      true
+    }.getOrElse {
+      preloadInterstitial(activity, adsEnabled, cleanId)
+      false
+    }
   }
 }

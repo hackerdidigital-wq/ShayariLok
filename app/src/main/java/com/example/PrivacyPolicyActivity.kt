@@ -82,9 +82,10 @@ class PrivacyPolicyActivity : ComponentActivity() {
 
       LaunchedEffect(Unit) {
         try {
-          val dbId = getString(R.string.firestore_database_id)
-          val firestore = FirebaseFirestore.getInstance(dbId)
-          repository.observeRealtimeShayariOverlay(firestore).collect { overlay ->
+          val dbId = getString(R.string.firestore_database_id).trim()
+          if (dbId.isNotEmpty()) {
+            val firestore = FirebaseFirestore.getInstance(dbId)
+            repository.observeRealtimeShayariOverlay(firestore).collect { overlay ->
             val current = repository.loadEffectiveCachedConfig()
             val site = overlay.publicSiteConfig
             val app = overlay.appConfigOverride
@@ -104,6 +105,7 @@ class PrivacyPolicyActivity : ComponentActivity() {
                     ?: current.privacyPolicySections,
                 dynamicTheme = app.dynamicTheme ?: site?.dynamicTheme ?: current.dynamicTheme,
               )
+            }
           }
         } catch (_: Exception) {
           // Safe fallback to cached effective config when running offline or in unit tests
@@ -322,16 +324,12 @@ private fun PrivacyPolicyScreen(
           }
         }
 
-        if (config.privacyPolicyUrl.isNotBlank()) {
+        val externalPolicyUrl = normalizeExternalUrl(config.privacyPolicyUrl)
+        if (externalPolicyUrl != null) {
           Button(
             onClick = {
-              val safeUrl =
-                config.privacyPolicyUrl.trim().let { raw ->
-                  if (raw.startsWith("http://") || raw.startsWith("https://")) raw
-                  else "https://$raw"
-                }
               runCatching {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl)))
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(externalPolicyUrl)))
               }
             },
             shape = RoundedCornerShape(16.dp),

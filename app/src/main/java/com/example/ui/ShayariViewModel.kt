@@ -4,10 +4,14 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.BuildConfig
+import com.example.data.RemoteConfigErrorCode
+import com.example.data.RemoteConfigException
 import com.example.data.ShayariRepository
 import com.example.data.ShayariTextSize
+import com.example.data.formatRemoteConfigError
 import com.example.model.ShayariConfig
 import com.example.model.ShayariItem
+import com.example.ui.i18n.appStringsFor
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -105,6 +109,7 @@ data class ShayariUiState(
   val isSearchVisible: Boolean = false,
   val searchQuery: String = "",
   val syncStatusMessage: String? = null,
+  val syncErrorMessage: String? = null,
   val showUpdateDialog: Boolean = false,
   val unreadNotificationCount: Int = 0,
   val selectedLanguageCode: String = "hi",
@@ -316,6 +321,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
           interstitialAdId = publicSite.interstitialAdId.ifBlank { base.interstitialAdId },
           nativeAdId = publicSite.nativeAdId.ifBlank { base.nativeAdId },
           faqs = if (publicSite.faqs.isNotEmpty()) publicSite.faqs else base.faqs,
+          banners = if (publicSite.banners.isNotEmpty()) publicSite.banners else base.banners,
           shayariList =
             if (publicSite.shayariList.isNotEmpty()) publicSite.shayariList else base.shayariList,
           notifications =
@@ -369,6 +375,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
         interstitialAdId = cfg.interstitialAdId.ifBlank { effectiveBase.interstitialAdId },
         nativeAdId = cfg.nativeAdId.ifBlank { effectiveBase.nativeAdId },
         faqs = cfg.faqs?.takeIf { it.isNotEmpty() } ?: effectiveBase.faqs,
+        banners = cfg.banners?.takeIf { it.isNotEmpty() } ?: effectiveBase.banners,
         notifications = cfg.notifications?.takeIf { it.isNotEmpty() } ?: effectiveBase.notifications,
         dynamicTheme = cfg.dynamicTheme ?: effectiveBase.dynamicTheme,
         categories = mergedCategories,
@@ -447,6 +454,7 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
       }
 
       val result = repository.fetchRemoteConfig()
+      val strings = appStringsFor(selectedLanguageCode)
       result.fold(
         onSuccess = { remoteConfig ->
           hasPendingRemoteSync = false
@@ -464,26 +472,34 @@ class ShayariViewModel(application: Application) : AndroidViewModel(application)
             it.copy(
               isNetworkConnected = true,
               showOfflineDialog = false,
+              syncErrorMessage = null,
             )
           }
           publishCurrentState(
-            syncMessage = if (isSilentSync) null else "नई शायरियाँ अपडेट हो गईं",
+            syncMessage = if (isSilentSync) null else strings.syncSuccessMsg,
           )
         },
-        onFailure = {
-          // Silent Fallback: if mobile internet is ON, NEVER show offline pop-up;
-          // keep showing cached/local data quietly and auto-retry in background.
-          val onlineAfterAttempt = repository.isNetworkAvailable()
-          hasPendingRemoteSync = true
+        onFailure = { error ->
+          val remoteError = error as? RemoteConfigException
+          val isRetryable = remoteError?.isRetryable ?: true
+          val onlineAfterAttempt =
+            remoteError?.code != RemoteConfigErrorCode.OFFLINE && repository.isNetworkAvailable()
+          val formattedError = formatRemoteConfigError(error, strings)
+          hasPendingRemoteSync = isRetryable
           _uiState.update {
             it.copy(
               isNetworkConnected = onlineAfterAttempt,
               showOfflineDialog = !onlineAfterAttempt,
+              syncErrorMessage = formattedError,
             )
           }
-          publishCurrentState(syncMessage = null)
-          if (onlineAfterAttempt) {
+          publishCurrentState(
+            syncMessage = if (!isSilentSync && onlineAfterAttempt) formattedError else null,
+          )
+          if (onlineAfterAttempt && isRetryable) {
             scheduleSilentBackgroundRetry()
+          } else if (!isRetryable) {
+            silentRetryJob?.cancel()
           }
         },
       )

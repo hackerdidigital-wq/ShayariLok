@@ -120,6 +120,7 @@ fun UnifiedAlertsSheet(
           )
     ) {
       Canvas(modifier = Modifier.fillMaxSize()) {
+        if (size.minDimension <= 1f) return@Canvas
         drawCircle(
           brush =
             Brush.radialGradient(

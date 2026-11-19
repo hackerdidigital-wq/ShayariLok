@@ -93,7 +93,7 @@ fun RealTimeChatScreen(
   var draft by remember { mutableStateOf("") }
   val listState = rememberLazyListState()
 
-  LaunchedEffect(messages.size) {
+  LaunchedEffect(messages.size, partner.effectiveUid) {
     if (messages.isNotEmpty()) {
       listState.animateScrollToItem(messages.lastIndex)
       onMarkMessagesRead(messages)

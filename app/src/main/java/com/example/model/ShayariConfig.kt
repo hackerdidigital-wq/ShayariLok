@@ -423,6 +423,83 @@ data class ShayariPolicySection(
   }
 }
 
+data class ShayariBanner(
+  val id: String,
+  val title: String,
+  val subtitle: String = "",
+  val imageUrl: String = "",
+  val linkUrl: String = "",
+  val ctaText: String = "",
+  val badge: String = "",
+) {
+  fun toJson(): JSONObject =
+    JSONObject().apply {
+      put("id", id)
+      if (title.isNotBlank()) put("title", title)
+      if (subtitle.isNotBlank()) put("subtitle", subtitle)
+      if (imageUrl.isNotBlank()) put("image_url", imageUrl)
+      if (linkUrl.isNotBlank()) put("link_url", linkUrl)
+      if (ctaText.isNotBlank()) put("cta_text", ctaText)
+      if (badge.isNotBlank()) put("badge", badge)
+    }
+
+  companion object {
+    private val IMAGE_KEYS =
+      listOf("image_url", "imageUrl", "banner_url", "bannerUrl", "image", "photo_url", "thumbnail", "thumbnail_url")
+    private val LINK_KEYS =
+      listOf("link_url", "linkUrl", "redirect_url", "redirectUrl", "click_url", "clickUrl", "action_url", "actionUrl", "target_url", "targetUrl", "url", "href")
+
+    fun fromJson(json: JSONObject?, fallbackIndex: Int = 1): ShayariBanner? {
+      if (json == null) return null
+      val isEnabled =
+        if (json.has("enabled")) json.optFlexibleBoolean("enabled", true)
+        else if (json.has("active")) json.optFlexibleBoolean("active", true)
+        else json.optFlexibleBoolean("is_active", true)
+      if (!isEnabled) return null
+
+      val id = json.optCleanString("id").ifEmpty { "banner_$fallbackIndex" }
+      val title =
+        json.optCleanString("title")
+          .ifEmpty { json.optCleanString("heading") }
+          .ifEmpty { json.optCleanString("name") }
+      val subtitle =
+        json.optCleanString("subtitle")
+          .ifEmpty { json.optCleanString("description") }
+          .ifEmpty { json.optCleanString("body") }
+          .ifEmpty { json.optCleanString("message") }
+      val imageUrl =
+        IMAGE_KEYS.firstNotNullOfOrNull { key ->
+          json.optCleanString(key).takeIf { it.isNotEmpty() }
+        } ?: ""
+      val linkUrl =
+        LINK_KEYS.firstNotNullOfOrNull { key ->
+          json.optCleanString(key).takeIf { it.isNotEmpty() }
+        } ?: ""
+      val ctaText =
+        json.optCleanString("cta_text")
+          .ifEmpty { json.optCleanString("ctaText") }
+          .ifEmpty { json.optCleanString("button_text") }
+          .ifEmpty { json.optCleanString("buttonText") }
+          .ifEmpty { json.optCleanString("cta") }
+      val badge =
+        json.optCleanString("badge")
+          .ifEmpty { json.optCleanString("tag") }
+          .ifEmpty { json.optCleanString("label") }
+
+      if (title.isBlank() && imageUrl.isBlank() && subtitle.isBlank()) return null
+      return ShayariBanner(
+        id = id,
+        title = title.ifBlank { "Featured Update" },
+        subtitle = subtitle,
+        imageUrl = imageUrl,
+        linkUrl = linkUrl,
+        ctaText = ctaText,
+        badge = badge,
+      )
+    }
+  }
+}
+
 data class ShayariConfig(
   val appName: String,
   val latestVersionCode: Int,
@@ -444,6 +521,7 @@ data class ShayariConfig(
   val announcementMessage: String = "",
   val notifications: List<ShayariNotification> = emptyList(),
   val faqs: List<ShayariFaq> = emptyList(),
+  val banners: List<ShayariBanner> = emptyList(),
   val categories: List<String> = DEFAULT_CATEGORIES,
   val shayariList: List<ShayariItem> = emptyList(),
   val supportedLanguages: List<SupportedLanguage> = DEFAULT_LANGUAGES,
@@ -484,6 +562,12 @@ data class ShayariConfig(
       val faqArray = JSONArray()
       faqs.forEach { faqArray.put(it.toJson()) }
       root.put("faqs", faqArray)
+    }
+
+    if (banners.isNotEmpty()) {
+      val bannerArray = JSONArray()
+      banners.forEach { bannerArray.put(it.toJson()) }
+      root.put("banners", bannerArray)
     }
 
     val categoryArray = JSONArray()
@@ -768,6 +852,25 @@ data class ShayariConfig(
           fallback?.faqs ?: emptyList()
         }
 
+      val bannersJson =
+        root.optJSONArray("banners")
+          ?: root.optJSONArray("dynamic_banners")
+          ?: root.optJSONArray("dynamicBanners")
+          ?: root.optJSONArray("promo_banners")
+          ?: root.optJSONArray("promoBanners")
+          ?: root.optJSONArray("banner_list")
+          ?: root.optJSONArray("bannerList")
+      val parsedBanners =
+        if (bannersJson != null) {
+          buildList {
+            for (i in 0 until bannersJson.length()) {
+              ShayariBanner.fromJson(bannersJson.optJSONObject(i), fallbackIndex = i + 1)?.let { add(it) }
+            }
+          }
+        } else {
+          fallback?.banners ?: emptyList()
+        }
+
       val categories = mutableListOf<String>()
       val categoriesJson = root.optJSONArray("categories")
       if (categoriesJson != null) {
@@ -898,6 +1001,7 @@ data class ShayariConfig(
         announcementMessage = announcementMessage,
         notifications = notifications,
         faqs = parsedFaqs,
+        banners = parsedBanners,
         categories = categories,
         shayariList = shayariItems,
         supportedLanguages = parsedLangs,

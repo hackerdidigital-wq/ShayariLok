@@ -7,7 +7,7 @@
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      max-width: 720px;
+      max-width: 760px;
       margin: 40px auto;
       padding: 0 20px;
       line-height: 1.7;
@@ -19,47 +19,66 @@
       background: #fffdf9;
       border: 1px solid #e5d7ca;
       border-radius: 16px;
-      padding: 24px;
+      padding: 28px;
     }
-    .meta { color: #60535a; font-size: 0.9rem; }
+    .meta { color: #60535a; font-size: 0.92rem; }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Privacy Policy for Shayari Lok</h1>
-    <p class="meta">Package ID: <code>com.cyberking.shayarilok</code> &bull; Effective Date: 2026</p>
+    <p class="meta">Developer: CyberKing Digital &bull; Package ID: <code>com.cyberking.shayarilok</code> &bull; Effective Date: 2026</p>
 
-    <h2>1. No Account or Personal Data Collection</h2>
+    <h2>1. Google Sign-In &amp; Account Information</h2>
     <p>
-      Shayari Lok is an ultra-lightweight reading application that works without user accounts,
-      registration, or login. We do not collect, store, or sell personally identifiable information
-      such as your name, email address, phone number, contacts, or location.
+      Shayari Lok uses Google Sign-In with Firebase Authentication so members can securely access
+      the Shayari Lok community. When you sign in, we process your Google account user ID, display
+      name, email address, and Google profile photo URL. Your email address is stored privately in
+      your user document and used to generate your unique deterministic community ID (e.g.
+      <code>@SL_1234</code>).
     </p>
 
-    <h2>2. Local Offline Cache &amp; Favorites</h2>
+    <h2>2. User Profile &amp; Gallery Photo Uploads</h2>
     <p>
-      Your favorite Shayari selections and the latest synced Shayari content are stored locally on
-      your device using Android <code>SharedPreferences</code> solely to provide instant offline access.
-      Clearing the app data or uninstalling the app removes this local data completely.
+      In the Profile tab, you may voluntarily edit your display name, <code>@SL_</code> handle,
+      bio, city, and address. City, bio, handle, display name, and follower/following/like counts
+      are visible to signed-in community members for discovery and connection, while your email and
+      address remain in your private user record. If you choose a gallery photo, Shayari Lok uses
+      the zero-permission Android Photo Picker (without requesting broad device storage permissions)
+      and compresses the selected image into a JPEG Data URI synced to your profile.
     </p>
 
-    <h2>3. Network Requests</h2>
+    <h2>3. Real-Time 1-on-1 Chat &amp; Social Notifications</h2>
     <p>
-      Shayari Lok uses standard network connectivity (<code>INTERNET</code> and
-      <code>ACCESS_NETWORK_STATE</code>) only to fetch public read-only Shayari content from the
-      configured remote JSON file. No user tracking identifiers are transmitted.
+      Private 1-on-1 messages sent inside Shayari Lok are stored in Cloud Firestore chat rooms
+      restricted by security rules so only the two conversation participants can read or send
+      messages in that room. Follow, like, and message alerts are delivered only to the recipient's
+      notification feed.
     </p>
 
-    <h2>4. Third-Party Links</h2>
+    <h2>4. Admin Panel Config Sync &amp; Local Offline Cache</h2>
     <p>
-      The app may contain optional links to external community channels or app store updates.
-      Visiting external websites is governed by their respective privacy policies.
+      Shayari Lok synchronizes app configuration, Shayari collections, announcements, promotional
+      banners, FAQs, polls, and privacy notices from Cloud Firestore and the Aegis Enterprise
+      Console SDK endpoint. Favorites, reading preferences, language/country choices, 18+ safety
+      toggles, daily reading streaks, and offline caches are stored locally via Android
+      <code>SharedPreferences</code>.
     </p>
 
-    <h2>5. Contact</h2>
+    <h2>5. Advertising (Google AdMob)</h2>
     <p>
-      If you have questions regarding this Privacy Policy, please reach out via the official
-      community channel listed inside the app's Settings screen.
+      When ads are enabled via remote configuration, Shayari Lok displays banner and interstitial
+      advertisements through Google Mobile Ads (AdMob), which may process device advertising
+      identifiers and ad interaction signals in accordance with Google's Privacy Policy.
+    </p>
+
+    <h2>6. Your Controls, Links &amp; Contact</h2>
+    <p>
+      You can update or clear your profile details and avatar photo anytime, toggle 18+ Safe Mode,
+      or sign out via Settings or Profile. External links inside promotional banners or updates
+      open in third-party apps or browsers governed by their own privacy policies. For privacy
+      questions or account assistance, contact <strong>CyberKing Digital</strong> via the official
+      community channel listed in Settings &amp; Info.
     </p>
   </div>
 </body>

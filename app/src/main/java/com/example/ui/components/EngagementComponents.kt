@@ -38,12 +38,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.layout.ContentScale
 import com.example.R
+import com.example.data.rememberShayariImageBitmap
+import com.example.model.ShayariBanner
 import com.example.model.ShayariPoll
 import com.example.model.SupportedCountry
 import com.example.model.SupportedLanguage
 import com.example.ui.i18n.LocalAppStrings
 import com.example.ui.theme.BadgeOrange
+import com.example.ui.theme.CrownGold
 import com.example.ui.theme.LocalShayariColors
 import com.example.ui.theme.NeonPink
 import com.example.ui.theme.NeonPurple
@@ -386,4 +395,150 @@ fun LanguageCountrySelectorDialog(
       }
     },
   )
+}
+
+@Composable
+fun DynamicBannerCarousel(
+  banners: List<ShayariBanner>,
+  onBannerClick: (ShayariBanner) -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  if (banners.isEmpty()) return
+  if (banners.size == 1) {
+    DynamicBannerCard(
+      banner = banners.first(),
+      onClick = { onBannerClick(banners.first()) },
+      modifier = modifier.fillMaxWidth(),
+    )
+  } else {
+    LazyRow(
+      modifier = modifier.fillMaxWidth(),
+      contentPadding = PaddingValues(end = 6.dp),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      items(banners, key = { it.id }) { banner ->
+        DynamicBannerCard(
+          banner = banner,
+          onClick = { onBannerClick(banner) },
+          modifier = Modifier.width(304.dp),
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun DynamicBannerCard(
+  banner: ShayariBanner,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val palette = LocalShayariColors.current
+  val bitmap = rememberShayariImageBitmap(banner.imageUrl)
+  val hasLink = banner.linkUrl.isNotBlank()
+
+  Surface(
+    shape = RoundedCornerShape(18.dp),
+    color = Color.Transparent,
+    border = BorderStroke(1.dp, palette.accentGold.copy(alpha = 0.55f)),
+    shadowElevation = 4.dp,
+    modifier =
+      modifier
+        .clip(RoundedCornerShape(18.dp))
+        .clickable(enabled = hasLink, onClick = onClick)
+        .minimumInteractiveComponentSize()
+        .testTag("dynamic_banner_${banner.id}"),
+  ) {
+    Box(
+      modifier =
+        Modifier.fillMaxWidth()
+          .background(
+            Brush.horizontalGradient(
+              colors = listOf(palette.headerStart, palette.cardGradientStart, palette.accentPurple.copy(alpha = 0.86f))
+            )
+          )
+    ) {
+      if (bitmap != null) {
+        Image(
+          bitmap = bitmap,
+          contentDescription = banner.title,
+          contentScale = ContentScale.Crop,
+          alpha = 0.28f,
+          modifier = Modifier.matchParentSize(),
+        )
+      }
+
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
+          if (banner.badge.isNotBlank()) {
+            Surface(
+              shape = RoundedCornerShape(50),
+              color = CrownGold.copy(alpha = 0.2f),
+              border = BorderStroke(0.8.dp, CrownGold.copy(alpha = 0.7f)),
+            ) {
+              Text(
+                text = banner.badge,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = CrownGold,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+              )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+          }
+
+          Text(
+            text = banner.title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color.White,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+
+          if (banner.subtitle.isNotBlank()) {
+            Spacer(modifier = Modifier.height(3.dp))
+            Text(
+              text = banner.subtitle,
+              style = MaterialTheme.typography.bodySmall,
+              color = Color(0xFFEBDDFB),
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+
+        if (hasLink) {
+          Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = CrownGold,
+            shadowElevation = 2.dp,
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            ) {
+              Text(
+                text = banner.ctaText.ifBlank { "Open" },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color(0xFF1D0D36),
+              )
+              Spacer(modifier = Modifier.width(4.dp))
+              Icon(
+                painter = painterResource(id = R.drawable.ic_open_in_new),
+                contentDescription = banner.title,
+                tint = Color(0xFF1D0D36),
+                modifier = Modifier.size(14.dp),
+              )
+            }
+          }
+        }
+      }
+    }
+  }
 }

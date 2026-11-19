@@ -32,7 +32,7 @@ fun AdMobBannerCard(
   modifier: Modifier = Modifier,
 ) {
   val cleanAdId = bannerAdId.trim()
-  if (!adsEnabled || cleanAdId.isBlank()) return
+  if (!adsEnabled || !AdMobManager.isValidAdUnitId(cleanAdId)) return
   val isPreview = LocalInspectionMode.current
   val isTestEnv = AdMobManager.isRobolectricUnitTest()
   if (isPreview || isTestEnv) return
@@ -42,13 +42,15 @@ fun AdMobBannerCard(
 
   val adView =
     remember(cleanAdId) {
-      AdMobManager.initialize(context, true)
-      AdView(context).apply {
-        setAdSize(AdSize.BANNER)
-        adUnitId = cleanAdId
-        loadAd(AdRequest.Builder().build())
-      }
-    }
+      runCatching {
+        AdMobManager.initialize(context, true)
+        AdView(context).apply {
+          setAdSize(AdSize.BANNER)
+          adUnitId = cleanAdId
+          loadAd(AdRequest.Builder().build())
+        }
+      }.getOrNull()
+    } ?: return
 
   DisposableEffect(adView) {
     onDispose {

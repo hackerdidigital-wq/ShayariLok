@@ -31,7 +31,9 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
   constructor(context: Context) : this(
     FirebaseFirestore.getInstance(
-      context.applicationContext.getString(R.string.firestore_database_id)
+      context.applicationContext.getString(R.string.firestore_database_id).trim().also { dbId ->
+        require(dbId.isNotEmpty()) { "firestore_database_id must not be blank" }
+      }
     )
   )
 
@@ -43,9 +45,11 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
   fun observeMyProfile(selfUid: String): Flow<PublicProfile?> = flow {
     requireUserId()
-    val publicDocRef = db.collection("appUsers").document(selfUid)
-    val altPublicDocRef = db.collection("appusers").document(selfUid)
-    val privateDocRef = db.collection("users").document(selfUid)
+    val cleanUid = selfUid.trim()
+    require(cleanUid.isNotEmpty()) { "selfUid must not be blank" }
+    val publicDocRef = db.collection("appUsers").document(cleanUid)
+    val altPublicDocRef = db.collection("appusers").document(cleanUid)
+    val privateDocRef = db.collection("users").document(cleanUid)
     val publicFlow =
       publicDocRef.snapshots().map { snapshot ->
         if (!snapshot.exists()) null else snapshot.toPublicProfile()
@@ -237,10 +241,12 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
   fun observeMyFollowingIds(selfUid: String): Flow<Set<String>> = flow {
     requireUserId()
-    val path = "appUsers/$selfUid/following"
+    val cleanUid = selfUid.trim()
+    require(cleanUid.isNotEmpty()) { "selfUid must not be blank" }
+    val path = "appUsers/$cleanUid/following"
     emitAll(
       db.collection("appUsers")
-        .document(selfUid)
+        .document(cleanUid)
         .collection("following")
         .snapshots()
         .map { snapshot -> snapshot.documents.map { it.id }.toSet() }
@@ -254,10 +260,12 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
   fun observeMyLikedProfileIds(selfUid: String): Flow<Set<String>> = flow {
     requireUserId()
-    val path = "appUsers/$selfUid/likes"
+    val cleanUid = selfUid.trim()
+    require(cleanUid.isNotEmpty()) { "selfUid must not be blank" }
+    val path = "appUsers/$cleanUid/likes"
     emitAll(
       db.collection("appUsers")
-        .document(selfUid)
+        .document(cleanUid)
         .collection("likes")
         .snapshots()
         .map { snapshot -> snapshot.documents.map { it.id }.toSet() }
@@ -271,14 +279,16 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
   fun observeMyChats(selfUid: String): Flow<List<ChatRoom>> = flow {
     requireUserId()
+    val cleanUid = selfUid.trim()
+    require(cleanUid.isNotEmpty()) { "selfUid must not be blank" }
     val path = "chatRooms"
     emitAll(
       db.collection(path)
-        .whereArrayContains("participantIds", selfUid)
+        .whereArrayContains("participantIds", cleanUid)
         .snapshots()
         .map { snapshot ->
           snapshot.documents
-            .map { doc -> doc.toChatRoom(selfUid) }
+            .map { doc -> doc.toChatRoom(cleanUid) }
             .sortedByDescending { it.updatedAtMillis }
         }
         .catch { cause ->
@@ -292,7 +302,12 @@ class SocialRepository(private val db: FirebaseFirestore) {
   @OptIn(ExperimentalCoroutinesApi::class)
   fun observeChatMessages(chatId: String): Flow<List<ChatMessage>> = flow {
     val selfUid = requireUserId()
-    val roomRef = db.collection("chatRooms").document(chatId)
+    val cleanChatId = chatId.trim()
+    if (cleanChatId.isEmpty()) {
+      emit(emptyList())
+      return@flow
+    }
+    val roomRef = db.collection("chatRooms").document(cleanChatId)
     emitAll(
       roomRef
         .snapshots()
@@ -337,10 +352,12 @@ class SocialRepository(private val db: FirebaseFirestore) {
 
   fun observeSocialNotifications(selfUid: String): Flow<List<SocialNotification>> = flow {
     requireUserId()
-    val path = "appUsers/$selfUid/notifications"
+    val cleanUid = selfUid.trim()
+    require(cleanUid.isNotEmpty()) { "selfUid must not be blank" }
+    val path = "appUsers/$cleanUid/notifications"
     emitAll(
       db.collection("appUsers")
-        .document(selfUid)
+        .document(cleanUid)
         .collection("notifications")
         .orderBy("createdAt", Query.Direction.DESCENDING)
         .limit(50)
@@ -930,9 +947,13 @@ class SocialRepository(private val db: FirebaseFirestore) {
       } catch (e: Exception) {
         return Result.failure(e)
       }
+    val cleanChatId = chatId.trim()
+    if (cleanChatId.isEmpty()) {
+      return Result.failure(IllegalArgumentException("Chat room ID cannot be blank"))
+    }
     val toUpdate = unreadMessages.filter { !it.isRead && it.effectiveRecipientId == uid && it.id.isNotBlank() }
     if (toUpdate.isEmpty()) return Result.success(Unit)
-    val roomRef = db.collection("chatRooms").document(chatId)
+    val roomRef = db.collection("chatRooms").document(cleanChatId)
     return try {
       val batch = db.batch()
       toUpdate.forEach { msg ->

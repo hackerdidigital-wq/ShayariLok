@@ -1,17 +1,18 @@
 package com.example.data
 
 object DefaultShayariData {
-  // Primary GitHub Raw config.json URL hosted on the live ShayariLok-Admin- repository (HTTP 200)
+  // Primary Aegis Enterprise Console SDK config endpoint
   const val DEFAULT_REMOTE_CONFIG_URL =
-    "https://raw.githubusercontent.com/hackerdidigital-wq/ShayariLok-Admin-/main/config.json"
+    "https://aegis-enterprise-console.deepakdeepakbamniya92.workers.dev/api/v1/sdk/config"
 
-  // Ordered fallback endpoints for ShayariLok-Admin-: GitHub Raw -> jsDelivr CDN -> GitHub Contents API
-  val REMOTE_CONFIG_ENDPOINTS =
-    listOf(
-      DEFAULT_REMOTE_CONFIG_URL,
-      "https://cdn.jsdelivr.net/gh/hackerdidigital-wq/ShayariLok-Admin-@main/config.json",
-      "https://api.github.com/repos/hackerdidigital-wq/ShayariLok-Admin-/contents/config.json?ref=main",
-    )
+  // Aegis App identifier sent via X-App-Id header
+  const val AEGIS_APP_ID = "app_7d74c0634e9a6550f94ba47b"
+
+  // Placeholder sentinel matching .env.example when secret has not been configured yet
+  internal const val PLACEHOLDER_AEGIS_API_KEY = "YOUR_AEGIS_API_KEY"
+
+  // Ordered endpoints for Aegis SDK config fetching
+  val REMOTE_CONFIG_ENDPOINTS = listOf(DEFAULT_REMOTE_CONFIG_URL)
 
   // Bundled starter config matching the live Admin Panel config.json 1:1
   val DEFAULT_CONFIG_JSON =
@@ -79,6 +80,16 @@ object DefaultShayariData {
           "category": "Appearance",
           "question": "Can I switch between Dark Theme and Light Theme?",
           "answer": "Yes! Open the side menu or Settings & Info to switch between Royal Dark Theme and Light Theme anytime."
+        }
+      ],
+      "banners": [
+        {
+          "id": "banner_community",
+          "badge": "FEATURED",
+          "title": "Join Shayari Lok Official Club",
+          "subtitle": "Daily fresh Shayari drops, festival specials & community updates.",
+          "link_url": "https://t.me/shayarilok_official",
+          "cta_text": "Explore Now"
         }
       ],
       "categories": [

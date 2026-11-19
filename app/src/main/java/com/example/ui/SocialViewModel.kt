@@ -375,7 +375,8 @@ class SocialViewModel(
   }
 
   fun openChatFromRoom(room: ChatRoom) {
-    val existing = uiState.value.communityProfiles.firstOrNull { it.effectiveUid == room.partnerId }
+    val allKnown = uiState.value.communityProfiles + uiState.value.remoteSearchMatches
+    val existing = allKnown.firstOrNull { it.effectiveUid == room.partnerId }
     val partner =
       existing
         ?: PublicProfile(
@@ -390,8 +391,9 @@ class SocialViewModel(
   }
 
   fun openFromNotification(notification: SocialNotification) {
+    val allKnown = uiState.value.communityProfiles + uiState.value.remoteSearchMatches
     val partner =
-      uiState.value.communityProfiles.firstOrNull { it.effectiveUid == notification.senderId }
+      allKnown.firstOrNull { it.effectiveUid == notification.senderId }
         ?: PublicProfile(
           id = notification.senderId,
           userId = notification.senderId,

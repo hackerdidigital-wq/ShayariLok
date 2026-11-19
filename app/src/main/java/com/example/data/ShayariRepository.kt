@@ -6,16 +6,22 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.util.Base64
+import android.util.Log
+import com.example.BuildConfig
 import com.example.R
 import com.example.model.ShayariConfig
 import com.example.model.ShayariItem
+import com.example.ui.i18n.AppStrings
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import java.io.BufferedReader
+import java.io.IOException
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -34,12 +40,57 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import org.json.JSONException
 import org.json.JSONObject
 
 enum class ShayariTextSize(val label: String, val fontSizeSp: Int, val lineHeightSp: Int) {
   COMPACT("Compact", 16, 26),
   MEDIUM("Standard", 18, 29),
   LARGE("Large", 21, 33),
+}
+
+enum class RemoteConfigErrorCode {
+  OFFLINE,
+  MISSING_CREDENTIALS,
+  UNAUTHORIZED,
+  NOT_FOUND,
+  RATE_LIMITED,
+  SERVER_ERROR,
+  NETWORK_TIMEOUT,
+  NETWORK_ERROR,
+  INVALID_PAYLOAD,
+}
+
+class RemoteConfigException(
+  val code: RemoteConfigErrorCode,
+  val httpStatus: Int? = null,
+  val serverMessage: String? = null,
+  val isRetryable: Boolean = true,
+  message: String,
+  cause: Throwable? = null,
+) : Exception(message, cause)
+
+fun formatRemoteConfigError(error: Throwable, strings: AppStrings): String {
+  val remoteError = error as? RemoteConfigException ?: return strings.syncErrorNetwork
+  val detail =
+    remoteError.serverMessage
+      ?.trim()
+      ?.takeIf { it.isNotEmpty() && it.length <= 80 }
+  return when (remoteError.code) {
+    RemoteConfigErrorCode.OFFLINE -> strings.offlineErrorShort
+    RemoteConfigErrorCode.MISSING_CREDENTIALS -> strings.syncErrorMissingKey
+    RemoteConfigErrorCode.UNAUTHORIZED ->
+      if (detail != null) "${strings.syncErrorUnauthorized} ($detail)" else strings.syncErrorUnauthorized
+    RemoteConfigErrorCode.NOT_FOUND -> strings.syncErrorNotFound
+    RemoteConfigErrorCode.RATE_LIMITED -> strings.syncErrorRateLimited
+    RemoteConfigErrorCode.SERVER_ERROR ->
+      if (remoteError.httpStatus != null) "${strings.syncErrorServer} (HTTP ${remoteError.httpStatus})"
+      else strings.syncErrorServer
+    RemoteConfigErrorCode.NETWORK_TIMEOUT -> strings.syncErrorTimeout
+    RemoteConfigErrorCode.NETWORK_ERROR -> strings.syncErrorNetwork
+    RemoteConfigErrorCode.INVALID_PAYLOAD ->
+      if (detail != null) "${strings.syncErrorInvalidPayload} ($detail)" else strings.syncErrorInvalidPayload
+  }
 }
 
 /**
@@ -276,44 +327,145 @@ class ShayariRepository(context: Context) {
   }
 
   suspend fun fetchRemoteConfig(
-    endpoints: List<String> = DefaultShayariData.REMOTE_CONFIG_ENDPOINTS
+    endpoints: List<String> = DefaultShayariData.REMOTE_CONFIG_ENDPOINTS,
+    appId: String = DefaultShayariData.AEGIS_APP_ID,
+    apiKey: String = BuildConfig.AEGIS_API_KEY,
   ): Result<ShayariConfig> =
     withContext(Dispatchers.IO) {
       if (!isNetworkAvailable()) {
-        return@withContext Result.failure(IllegalStateException("Offline Mode: No Internet Connection"))
+        return@withContext Result.failure(
+          RemoteConfigException(
+            code = RemoteConfigErrorCode.OFFLINE,
+            isRetryable = true,
+            message = "Offline Mode: No Internet Connection",
+          )
+        )
+      }
+
+      val cleanAppId = appId.trim()
+      val cleanApiKey = apiKey.trim()
+      if (
+        cleanAppId.isEmpty() ||
+          cleanApiKey.isEmpty() ||
+          cleanApiKey == DefaultShayariData.PLACEHOLDER_AEGIS_API_KEY
+      ) {
+        val missingError =
+          RemoteConfigException(
+            code = RemoteConfigErrorCode.MISSING_CREDENTIALS,
+            isRetryable = false,
+            message = "Missing Aegis SDK credentials. Configure AEGIS_API_KEY in AI Studio Secrets.",
+          )
+        Log.w(TAG, missingError.message ?: "Missing Aegis SDK credentials")
+        return@withContext Result.failure(missingError)
       }
 
       var lastError: Exception? = null
       for (endpoint in endpoints) {
         try {
-          val rawResponse = fetchJsonFromUrl(buildCacheBustedUrl(endpoint))
-          val rawJson = unwrapGitHubContentsPayloadIfNeeded(rawResponse)
-          val parsedConfig = ShayariConfig.fromJson(rawJson)
+          val rawResponse =
+            fetchJsonFromUrl(
+              endpoint = endpoint,
+              headers =
+                mapOf(
+                  HEADER_APP_ID to cleanAppId,
+                  HEADER_API_KEY to cleanApiKey,
+                ),
+            )
+          val rawJson = unwrapSdkConfigPayload(rawResponse)
+          val parsedConfig =
+            try {
+              ShayariConfig.fromJson(rawJson)
+            } catch (e: Exception) {
+              throw RemoteConfigException(
+                code = RemoteConfigErrorCode.INVALID_PAYLOAD,
+                isRetryable = false,
+                message = "Unable to parse remote SDK config JSON",
+                cause = e,
+              )
+            }
           val now = System.currentTimeMillis()
           prefs.edit()
             .putString(KEY_CACHED_CONFIG_JSON, rawJson)
             .putLong(KEY_LAST_SYNCED_AT, now)
             .apply()
           return@withContext Result.success(parsedConfig)
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: RemoteConfigException) {
+          Log.w(TAG, "Remote config sync failed (${e.code}, http=${e.httpStatus}): ${e.message}")
           lastError = e
+          if (!e.isRetryable && e.code == RemoteConfigErrorCode.UNAUTHORIZED) {
+            break
+          }
+        } catch (e: Exception) {
+          Log.w(TAG, "Remote config sync error: ${e.message}")
+          lastError =
+            RemoteConfigException(
+              code = RemoteConfigErrorCode.NETWORK_ERROR,
+              isRetryable = true,
+              message = e.message ?: "Failed to fetch remote config",
+              cause = e,
+            )
         }
       }
 
-      Result.failure(lastError ?: IllegalStateException("Unable to reach server config.json"))
+      Result.failure(
+        lastError
+          ?: RemoteConfigException(
+            code = RemoteConfigErrorCode.NETWORK_ERROR,
+            isRetryable = true,
+            message = "Unable to reach Aegis SDK config endpoint",
+          )
+      )
     }
 
-  internal fun buildCacheBustedUrl(
-    endpoint: String,
-    timestampMillis: Long = System.currentTimeMillis(),
-  ): String {
-    val separator = if (endpoint.contains("?")) "&" else "?"
-    return "${endpoint}${separator}t=${timestampMillis}"
-  }
-
-  internal fun unwrapGitHubContentsPayloadIfNeeded(rawPayload: String): String {
+  internal fun unwrapSdkConfigPayload(rawPayload: String): String {
     val trimmed = rawPayload.trimStart('\uFEFF').trim()
-    val json = JSONObject(trimmed)
+    if (trimmed.isEmpty()) {
+      throw RemoteConfigException(
+        code = RemoteConfigErrorCode.INVALID_PAYLOAD,
+        isRetryable = false,
+        message = "Empty response from remote config endpoint",
+      )
+    }
+
+    val json =
+      try {
+        JSONObject(trimmed)
+      } catch (e: JSONException) {
+        throw RemoteConfigException(
+          code = RemoteConfigErrorCode.INVALID_PAYLOAD,
+          isRetryable = false,
+          message = "Malformed JSON response from remote config endpoint",
+          cause = e,
+        )
+      }
+
+    if (json.has("success") && !json.optBoolean("success", true)) {
+      val serverMsg = extractServerErrorMessage(json)
+      throw RemoteConfigException(
+        code = RemoteConfigErrorCode.INVALID_PAYLOAD,
+        serverMessage = serverMsg,
+        isRetryable = false,
+        message = serverMsg ?: "Remote config endpoint returned success=false",
+      )
+    }
+
+    if (json.has("error") && !hasDirectConfigKeys(json) && !hasEnvelopeConfigKeys(json)) {
+      val serverMsg = extractServerErrorMessage(json)
+      throw RemoteConfigException(
+        code = RemoteConfigErrorCode.INVALID_PAYLOAD,
+        serverMessage = serverMsg,
+        isRetryable = false,
+        message = serverMsg ?: "Remote config endpoint returned an error payload",
+      )
+    }
+
+    val unwrapped = unwrapConfigObjectRecursive(json, depth = 0)
+    if (unwrapped != null) {
+      return unwrapped
+    }
+
     val encoding = json.optString("encoding", "")
     val content = json.optString("content", "")
     if (encoding.equals("base64", ignoreCase = true) && content.isNotBlank() && !json.has("shayari_list")) {
@@ -324,7 +476,55 @@ class ShayariRepository(context: Context) {
     return trimmed
   }
 
-  private fun fetchJsonFromUrl(endpoint: String): String {
+  private fun unwrapConfigObjectRecursive(obj: JSONObject, depth: Int): String? {
+    if (depth > 3) return null
+    if (hasDirectConfigKeys(obj)) {
+      return obj.toString()
+    }
+    for (key in ENVELOPE_KEYS) {
+      if (!obj.has(key) || obj.isNull(key)) continue
+      when (val nested = obj.opt(key)) {
+        is JSONObject -> {
+          val resolved = unwrapConfigObjectRecursive(nested, depth + 1)
+          if (resolved != null) return resolved
+          if (depth == 0 && nested.length() > 0) return nested.toString()
+        }
+        is String -> {
+          val candidate = nested.trimStart('\uFEFF').trim()
+          if (candidate.startsWith("{")) {
+            return try {
+              val parsedNested = JSONObject(candidate)
+              unwrapConfigObjectRecursive(parsedNested, depth + 1) ?: candidate
+            } catch (_: JSONException) {
+              candidate
+            }
+          }
+        }
+      }
+    }
+    return null
+  }
+
+  private fun hasDirectConfigKeys(json: JSONObject): Boolean =
+    json.has("shayari_list") ||
+      json.has("shayariList") ||
+      json.has("app_name") ||
+      json.has("appName") ||
+      json.has("categories") ||
+      json.has("maintenance_mode") ||
+      json.has("maintenanceMode") ||
+      json.has("ads_enabled") ||
+      json.has("adsEnabled") ||
+      json.has("dynamic_theme") ||
+      json.has("dynamicTheme")
+
+  private fun hasEnvelopeConfigKeys(json: JSONObject): Boolean =
+    ENVELOPE_KEYS.any { json.has(it) && !json.isNull(it) }
+
+  private fun fetchJsonFromUrl(
+    endpoint: String,
+    headers: Map<String, String> = emptyMap(),
+  ): String {
     var connection: HttpURLConnection? = null
     try {
       val url = URL(endpoint)
@@ -335,27 +535,135 @@ class ShayariRepository(context: Context) {
           connectTimeout = CONNECT_TIMEOUT_MS
           readTimeout = READ_TIMEOUT_MS
           useCaches = false
-          setRequestProperty(
-            "Accept",
-            "application/vnd.github.raw+json, application/json, text/plain;q=0.9, */*;q=0.8",
-          )
+          setRequestProperty("Accept", "application/json")
           setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate")
           setRequestProperty("Pragma", "no-cache")
           setRequestProperty("User-Agent", "ShayariLok-Android/1.0")
+          headers.forEach { (key, value) ->
+            setRequestProperty(key, value)
+          }
         }
 
       val responseCode = connection.responseCode
       if (responseCode !in 200..299) {
-        connection.errorStream?.close()
-        throw IllegalStateException("HTTP $responseCode")
+        val rawErrorBody = readStreamSafely(connection.errorStream)
+        val serverMsg = parseErrorMessageFromBody(rawErrorBody)
+        throw mapHttpStatusToException(responseCode, serverMsg)
       }
 
       return BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { reader ->
         reader.readText()
       }
+    } catch (e: RemoteConfigException) {
+      throw e
+    } catch (e: SocketTimeoutException) {
+      throw RemoteConfigException(
+        code = RemoteConfigErrorCode.NETWORK_TIMEOUT,
+        isRetryable = true,
+        message = "Request timed out while fetching remote config",
+        cause = e,
+      )
+    } catch (e: IOException) {
+      throw RemoteConfigException(
+        code = RemoteConfigErrorCode.NETWORK_ERROR,
+        isRetryable = true,
+        message = e.message ?: "Network I/O failure while fetching remote config",
+        cause = e,
+      )
     } finally {
       connection?.disconnect()
     }
+  }
+
+  private fun mapHttpStatusToException(statusCode: Int, serverMessage: String?): RemoteConfigException {
+    val suffix = if (!serverMessage.isNullOrBlank()) ": $serverMessage" else ""
+    return when (statusCode) {
+      401, 403 ->
+        RemoteConfigException(
+          code = RemoteConfigErrorCode.UNAUTHORIZED,
+          httpStatus = statusCode,
+          serverMessage = serverMessage,
+          isRetryable = false,
+          message = "HTTP $statusCode Unauthorized$suffix",
+        )
+      404 ->
+        RemoteConfigException(
+          code = RemoteConfigErrorCode.NOT_FOUND,
+          httpStatus = statusCode,
+          serverMessage = serverMessage,
+          isRetryable = false,
+          message = "HTTP $statusCode Not Found$suffix",
+        )
+      429 ->
+        RemoteConfigException(
+          code = RemoteConfigErrorCode.RATE_LIMITED,
+          httpStatus = statusCode,
+          serverMessage = serverMessage,
+          isRetryable = true,
+          message = "HTTP $statusCode Rate Limited$suffix",
+        )
+      in 500..599 ->
+        RemoteConfigException(
+          code = RemoteConfigErrorCode.SERVER_ERROR,
+          httpStatus = statusCode,
+          serverMessage = serverMessage,
+          isRetryable = true,
+          message = "HTTP $statusCode Server Error$suffix",
+        )
+      else ->
+        RemoteConfigException(
+          code = RemoteConfigErrorCode.INVALID_PAYLOAD,
+          httpStatus = statusCode,
+          serverMessage = serverMessage,
+          isRetryable = false,
+          message = "HTTP $statusCode$suffix",
+        )
+    }
+  }
+
+  private fun readStreamSafely(stream: InputStream?): String {
+    if (stream == null) return ""
+    return try {
+      stream.use { input ->
+        val buffer = ByteArray(MAX_ERROR_BODY_BYTES)
+        val read = input.read(buffer)
+        if (read <= 0) "" else String(buffer, 0, read, Charsets.UTF_8).trim()
+      }
+    } catch (_: Exception) {
+      ""
+    }
+  }
+
+  private fun parseErrorMessageFromBody(rawBody: String): String? {
+    if (rawBody.isBlank()) return null
+    return try {
+      val json = JSONObject(rawBody.trimStart('\uFEFF').trim())
+      extractServerErrorMessage(json)
+    } catch (_: Exception) {
+      rawBody.take(140).trim().takeIf { it.isNotEmpty() }
+    }
+  }
+
+  private fun extractServerErrorMessage(json: JSONObject): String? {
+    val directMsg = json.optString("message", "").trim()
+    if (directMsg.isNotEmpty() && !directMsg.equals("null", ignoreCase = true)) {
+      return directMsg
+    }
+    when (val err = json.opt("error")) {
+      is String -> {
+        val clean = err.trim()
+        if (clean.isNotEmpty() && !clean.equals("null", ignoreCase = true)) return clean
+      }
+      is JSONObject -> {
+        val nested =
+          err.optString("message", "").trim()
+            .ifEmpty { err.optString("detail", "").trim() }
+            .ifEmpty { err.optString("code", "").trim() }
+        if (nested.isNotEmpty() && !nested.equals("null", ignoreCase = true)) return nested
+      }
+    }
+    val detail = json.optString("detail", "").trim().ifEmpty { json.optString("reason", "").trim() }
+    return detail.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
   }
 
   fun isNetworkAvailable(): Boolean {
@@ -557,6 +865,14 @@ class ShayariRepository(context: Context) {
                     data.containsKey("privacyPolicySections") ||
                     data.containsKey("privacy_sections") ||
                     data.containsKey("privacySections")
+                val hasBanners =
+                  data.containsKey("banners") ||
+                    data.containsKey("dynamic_banners") ||
+                    data.containsKey("dynamicBanners") ||
+                    data.containsKey("promo_banners") ||
+                    data.containsKey("promoBanners") ||
+                    data.containsKey("banner_list") ||
+                    data.containsKey("bannerList")
                 val cats =
                   (data["categories"] as? List<*>)
                     ?.mapNotNull { (it as? String)?.trim()?.takeIf { s -> s.isNotEmpty() } }
@@ -583,6 +899,7 @@ class ShayariRepository(context: Context) {
                   interstitialAdId = parsedDoc.interstitialAdId,
                   nativeAdId = parsedDoc.nativeAdId,
                   faqs = if (hasFaqs) parsedDoc.faqs else null,
+                  banners = if (hasBanners) parsedDoc.banners else null,
                   notifications = if (hasNotifications) parsedDoc.notifications else null,
                   dynamicTheme = if (hasDynamicTheme) parsedDoc.dynamicTheme else null,
                   categories = cats,
@@ -625,6 +942,7 @@ class ShayariRepository(context: Context) {
     val interstitialAdId: String = "",
     val nativeAdId: String = "",
     val faqs: List<com.example.model.ShayariFaq>? = null,
+    val banners: List<com.example.model.ShayariBanner>? = null,
     val notifications: List<com.example.model.ShayariNotification>? = null,
     val dynamicTheme: com.example.model.DynamicThemeConfig? = null,
     val categories: List<String> = emptyList(),
@@ -638,6 +956,12 @@ class ShayariRepository(context: Context) {
   )
 
   companion object {
+    private const val TAG = "ShayariRepository"
+    const val HEADER_APP_ID = "X-App-Id"
+    const val HEADER_API_KEY = "X-API-Key"
+    private val ENVELOPE_KEYS =
+      listOf("data", "config", "result", "payload", "site_config", "siteConfig", "config_json", "configJson")
+    private const val MAX_ERROR_BODY_BYTES = 8192
     private const val PREFS_NAME = "shayari_lok_prefs"
     private const val KEY_CACHED_CONFIG_JSON = "cached_config_json"
     private const val KEY_CACHED_OVERLAY_CONFIG_JSON = "cached_overlay_config_json"

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -88,6 +89,8 @@ import com.example.ui.screens.UnifiedAlertsSheet
 import com.example.ui.theme.BadgePurple
 import com.example.ui.theme.ShayariLokTheme
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
@@ -100,29 +103,87 @@ class MainActivity : ComponentActivity() {
     val repository = ShayariRepository(this)
     setContent {
       val initialDark = remember { repository.getUserDarkModeOverride() ?: true }
+      val initialLogoUrl = remember { repository.loadEffectiveCachedConfig().appLogoUrl }
       ShayariLokTheme(darkTheme = initialDark) {
-        ShayariLokRootGate()
+        ShayariLokRootGate(initialLogoUrl = initialLogoUrl)
       }
     }
   }
 }
 
 @Composable
-private fun ShayariLokRootGate() {
-  val auth = Firebase.auth
+private fun ShayariLokRootGate(initialLogoUrl: String = "") {
+  val context = LocalContext.current
+  val appContext = context.applicationContext
+  var initNonce by remember { mutableStateOf(0) }
+
+  val auth: FirebaseAuth? =
+    remember(initNonce) {
+      runCatching {
+        if (FirebaseApp.getApps(appContext).isEmpty()) {
+          FirebaseApp.initializeApp(appContext)
+        }
+        Firebase.auth
+      }.getOrNull()
+    }
+
+  if (auth == null) {
+    StartupRecoveryScreen(
+      message = "Unable to initialize secure Google & cloud session on this device.",
+      onRetryClick = { initNonce++ },
+    )
+    return
+  }
+
   val currentUser by
     auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
   val user = currentUser
 
   if (user == null) {
     SignInScreen(
+      appLogoUrl = initialLogoUrl,
       onAuthSuccess = {
         // AuthStateListener updates currentUser reactively
-      }
+      },
     )
   } else {
     key(user.uid) {
       AuthenticatedShayariApp(firebaseUser = user)
+    }
+  }
+}
+
+@Composable
+private fun StartupRecoveryScreen(
+  message: String,
+  onRetryClick: () -> Unit,
+) {
+  Box(
+    contentAlignment = Alignment.Center,
+    modifier = Modifier.fillMaxSize().padding(24.dp),
+  ) {
+    androidx.compose.foundation.layout.Column(
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.app_name),
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+        color = Color.White,
+      )
+      Text(
+        text = message,
+        style = MaterialTheme.typography.bodyMedium,
+        color = Color(0xFFD9CCEE),
+        textAlign = TextAlign.Center,
+      )
+      Button(
+        onClick = onRetryClick,
+        modifier = Modifier.minimumInteractiveComponentSize().testTag("startup_retry_button"),
+      ) {
+        Text(text = stringResource(R.string.action_retry_hindi))
+      }
     }
   }
 }
@@ -136,8 +197,27 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
   val coroutineScope = rememberCoroutineScope()
   val credentialManager = remember(context) { CredentialManager.create(context) }
 
-  val databaseId = remember(appContext) { appContext.getString(R.string.firestore_database_id) }
-  val firestore = remember(databaseId) { FirebaseFirestore.getInstance(databaseId) }
+  val databaseId =
+    remember(appContext) {
+      runCatching { appContext.getString(R.string.firestore_database_id).trim() }.getOrDefault("")
+    }
+  var firestoreInitNonce by remember { mutableStateOf(0) }
+  val firestore: FirebaseFirestore? =
+    remember(databaseId, firestoreInitNonce) {
+      if (databaseId.isEmpty()) {
+        null
+      } else {
+        runCatching { FirebaseFirestore.getInstance(databaseId) }.getOrNull()
+      }
+    }
+
+  if (firestore == null) {
+    StartupRecoveryScreen(
+      message = "Unable to connect to cloud database. Please verify Firebase configuration and retry.",
+      onRetryClick = { firestoreInitNonce++ },
+    )
+    return
+  }
 
   val viewModel: ShayariViewModel = viewModel(key = "shayari_${firebaseUser.uid}")
   LaunchedEffect(firestore, firebaseUser.uid) {
@@ -368,6 +448,7 @@ private fun AuthenticatedShayariApp(firebaseUser: FirebaseUser) {
               onSelectCountry = viewModel::selectCountry,
               onToggleAdultContent = viewModel::setAdultContentAllowed,
               onVotePoll = viewModel::voteInPoll,
+              onOpenBannerClick = { banner -> openExternalBrowser(context, banner.linkUrl) },
               socialTabContent = { tab, openLocalePicker ->
                 if (tab == MainTab.COMMUNITY) {
                   SocialCommunityScreen(
@@ -619,19 +700,31 @@ private fun shareAppWithFriends(context: Context, appName: String) {
   context.startActivity(Intent.createChooser(intent, "Share $appName"))
 }
 
-private fun openExternalBrowser(context: Context, rawUrl: String) {
+internal fun normalizeExternalUrl(rawUrl: String): String? {
   val trimmed = rawUrl.trim()
-  if (trimmed.isEmpty()) return
-  val safeUrl =
-    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-      trimmed
-    } else {
-      "https://$trimmed"
-    }
+  if (trimmed.isEmpty()) return null
+  val lower = trimmed.lowercase()
+  if (
+    lower.startsWith("javascript:") ||
+      lower.startsWith("data:") ||
+      lower.startsWith("file:") ||
+      lower.startsWith("content:")
+  ) {
+    return null
+  }
+  return when {
+    trimmed.contains("://") -> trimmed
+    lower.startsWith("mailto:") || lower.startsWith("tel:") -> trimmed
+    else -> "https://$trimmed"
+  }
+}
+
+private fun openExternalBrowser(context: Context, rawUrl: String) {
+  val safeUrl = normalizeExternalUrl(rawUrl) ?: return
   try {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl))
     context.startActivity(intent)
   } catch (_: Exception) {
-    // Ignore if no browser is installed on device
+    // Ignore if no matching app or browser is installed on device
   }
 }

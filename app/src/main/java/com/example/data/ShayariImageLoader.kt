@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -50,7 +51,9 @@ object ShayariImageLoader {
             }
             else -> null
           }
-        } catch (_: Exception) {
+        } catch (ce: CancellationException) {
+          throw ce
+        } catch (_: Throwable) {
           null
         }
       } ?: return null

@@ -63,6 +63,16 @@
       "answer": "Yes! Open the side menu or Settings & Info to switch between Royal Dark Theme and Light Theme anytime."
     }
   ],
+  "banners": [
+    {
+      "id": "banner_community",
+      "badge": "FEATURED",
+      "title": "Join Shayari Lok Official Club",
+      "subtitle": "Daily fresh Shayari drops, festival specials & community updates.",
+      "link_url": "https://t.me/shayarilok_official",
+      "cta_text": "Explore Now"
+    }
+  ],
   "categories": [
     "All",
     "Love",
